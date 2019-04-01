@@ -203,7 +203,9 @@ class GridPredictionArray(GridPrediction):
         :param width: Width of the grid, in number of cells
         :param height: Height of the grid, in number of cells
         """
+        print("Calling prediction.to_matrix({},{})".format(width,height))
         matrix = prediction.to_matrix(width, height)
+        print("Creating GridPredictionArray...")
         return GridPredictionArray(prediction.cell_width, prediction.cell_height,
             matrix, prediction.xoffset, prediction.yoffset)
 
@@ -223,7 +225,20 @@ class GridPredictionArray(GridPrediction):
             cell_height = cell_width
         width = int(_np.rint((region.xmax - region.xmin) / cell_width))
         height = int(_np.rint((region.ymax - region.ymin) / cell_height))
+        print("width = " + str(width))
+        print("height = " + str(height))
+        print("prediction.samples :")
+        print(prediction.samples)
+        print("Calling prediction.rebase")
+        print(".")
         newpred = prediction.rebase(cell_width, cell_height, region.xmin, region.ymin)
+        print("Done with prediction.rebase")
+        print("newpred.xoffset :")
+        print(newpred.xoffset)
+        print("newpred.yoffset :")
+        print(newpred.yoffset)
+        print("newpred.samples :")
+        print(newpred.samples)
         return GridPredictionArray.from_continuous_prediction(newpred, width, height)
 
     @staticmethod
@@ -361,6 +376,8 @@ class ContinuousPrediction():
     def to_matrix(self, width, height):
         """Sample the risk at each grid point from `(0, 0)` to
         `(width-1, height-1)` inclusive.  Optimised."""
+        print("self.samples: {}".format(self.samples))
+        print("self.cell_width and height: {},{}".format(self.cell_width, self.cell_height))
         if self.samples < 0:
             return self._to_matrix_grid(width, height)
         matrix = _np.empty((height, width))
@@ -370,6 +387,7 @@ class ContinuousPrediction():
             gx = _np.broadcast_to(_np.arange(width), (self.samples, width)).ravel()
             x = (gx + _np.random.random(self.samples * width)) * self.cell_width + self.xoffset
             matrix[gy] = _np.mean(_np.reshape(self._risk_array(x, y), (self.samples, width)), axis=0)
+        print("Done creating matrix.")
         return matrix
 
     def _sub_grid_mesh(self):
@@ -445,7 +463,8 @@ class ContinuousPrediction():
         """Returns a new instance using the same risk but with a different grid
         size and offset"""
         if samples is None:
-            samples = self.__samples
+            #samples = self.__samples
+            samples = self._samples
         instance = ContinuousPrediction(cell_width, cell_height, xoffset,
             yoffset, samples)
         # Monkey-patch a delegation

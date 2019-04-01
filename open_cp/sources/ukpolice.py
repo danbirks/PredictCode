@@ -21,7 +21,7 @@ import datetime
 import numpy as np
 from ..data import TimedPoints
 
-_default_filename = os.path.join(os.path.split(__file__)[0],"uk_police.csv")
+_default_filename = os.path.join(os.path.split(os.path.abspath(__file__))[0],"uk_police.csv")
 _DESCRIPTION_FIELD = 'Crime type'
 _X_FIELD = 'Longitude'
 _Y_FIELD = 'Latitude'
