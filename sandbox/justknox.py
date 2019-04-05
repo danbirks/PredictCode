@@ -125,12 +125,12 @@ _day = np.timedelta64(1,"D")
 
 
 
+print("testA")
 
 
 
 
-
-num_knox_iterations = 100
+num_knox_iterations = 10
 
 datadir = os.path.join("..", "..", "Data")
 chicago_file_name = "chicago_all_old.csv"
@@ -142,6 +142,8 @@ chicago.set_data_directory(datadir)
 
 
 
+print("testB")
+region_polygon = chicago.get_side(chicago_side)
 
 
 #start_train = np.datetime64("2018-03-01")
@@ -158,30 +160,39 @@ cell_width = 250
 cell_height = cell_width
 
 
+print("testC")
 
 #points_crime = chicago.load(chicago_file_path, crime_type_set)
 points_crime = chicago.load(chicago_file_path, crime_type_set, type="all")
 
 
+print("testDaaa")
+
+print(inspect.getmodule(chicago))
 
 ### OBTAIN GRIDDED REGION
 
 # Obtain polygon shapely object for region of interest
 region_polygon = chicago.get_side(chicago_side)
 
+print("testE1aaa")
 # Obtain data set
 points_crime_region = open_cp.geometry.intersect_timed_points(points_crime, region_polygon)
 
+print("testE2")
 # Obtain grid with cells only overlaid on relevant region
 masked_grid_region = open_cp.geometry.mask_grid_by_intersection(region_polygon, open_cp.data.Grid(xsize=cell_width, ysize=cell_height, xoffset=0, yoffset=0))
 
+print("testE3")
 # Get a list/tuple of all cellcoords in the region
 cellcoordlist_region = getRegionCells(masked_grid_region)
 
+print("testE4")
 # Obtain number of cells in the grid that contain relevant geometry
 # (i.e., not the full rectangular grid, only relevant cells)
 num_cells_region = len(cellcoordlist_region)
 
+print("testE5")
 
 
 
@@ -237,7 +248,7 @@ for time_window in time_windows:
     
     
     
-    
+    """
     outfilebase = "knox_sschi_burg_cell{}_sbin{}_tbin{}_iter{}.txt".format(cell_width, 100, 7, num_knox_iterations)
     outfilename = os.path.join(datadir, outfilebase)
     
@@ -262,19 +273,18 @@ for time_window in time_windows:
             fout.write(" ".join([str(result.distribution(i,j)) for j in range(len(result.time_bins))]))
             fout.write("\n")
         fout.write("\n")
-    
-    
-    
-    
-    
-    
-    
-    
     """
     
     
-    mappable = plt.cm.ScalarMappable(cmap=yellow_to_red)
     
+    
+    
+    
+    
+    
+    
+    
+    mappable = plt.cm.ScalarMappable(cmap=yellow_to_red)
     mappable.set_array(list(all_ratios(result)))
     mappable.autoscale()
     
@@ -323,4 +333,4 @@ for time_window in time_windows:
         cbar = fig.colorbar(mappable, orientation="vertical")
         cbar.set_label("Knox ratio")
         
-    """
+    
