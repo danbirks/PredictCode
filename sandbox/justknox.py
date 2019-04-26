@@ -19,6 +19,7 @@ import descartes
 from itertools import product
 from collections import Counter
 import random
+import time
 
 # The geopandas module does not come standard with anaconda,
 # so you'll need to run the anaconda prompt as an administrator
@@ -54,16 +55,21 @@ import open_cp.knox
 
 
 
-
-# Given a TimedPoints object that contains spatial coordinates paired
-#  with timestamps, return a similar object that only contains the
-#  data whose timestamps are within the given range
+"""
+Given a TimedPoints object that contains spatial coordinates paired
+    with timestamps, return a similar object that only contains the
+    data whose timestamps are within the given range
+"""
 def getTimedPointsInTimeRange(points, start_time, end_time):
     return points[(points.timestamps >= start_time)
                   & (points.timestamps <= end_time)]
 
 
-
+"""
+getRegionCells
+Given a grid, return a list of all cells in the grid that are part of the
+    defined region, i.e., that are not covered by the "mask" of the grid
+"""
 def getRegionCells(grid):
     # Make sure to do yextent then xextent, because cellcoords
     #  correspond to (row,col) in grid
@@ -74,7 +80,16 @@ def getRegionCells(grid):
 
 
 
-
+"""
+knox_ratio
+Computes the "knox ratio", defined as being:
+    The "statistic" (# events in a given pair of distance and time bins)
+    divided by
+    the median #events in that bin pair among the randomized trials
+Note: If the #trials is even, the "median" is actually the entry preceding
+    the direct center of the list, rather than the average of the two entries
+    on either side.
+"""
 def knox_ratio(statistic, distribution):
     """As in the paper, compute the ratio of the statistic to the median
     of the values in the distribution"""
@@ -85,6 +100,12 @@ def knox_ratio(statistic, distribution):
 
 
 
+
+"""
+all_ratios
+Given a Knox result, this constructs a generator that returns Knox ratios for
+    all (space,time) bin pairs
+"""
 def all_ratios(result):
     for i, space_bin in enumerate(result.space_bins):
         for j, time_bin in enumerate(result.time_bins):
@@ -97,12 +118,46 @@ def all_ratios(result):
 
 
 """
+#
+# start: "2018-09-01"
+# end: "2019-03-01"
+# step: "3D", "2W", "6M", "1Y", etc
+# output is always array containing type datetime64[D]
+"""
+def generateDateRange(start, end, step):
+    step_num = int(step[:-1])
+    step_unit = step[-1].upper()
+    if step_unit not in "YMWD":
+        print("generateDateRange only recognizes Y/M/W/D as units")
+        sys.exit(1)
+    if step_unit == "W":
+        step_num *= 7
+        step_unit = "D"
+    start_datetime = np.datetime64(start)
+    end_datetime = np.datetime64(end)
+    date_range = np.arange(start_datetime, end_datetime, step=np.timedelta64(step_num, step_unit), dtype="datetime64[{}]".format(step_unit))
+    return np.array(date_range, dtype="datetime64[D]")
+
+
+
+
+def generateLaterDate(start, step):
+    return np.datetime64(start) + np.timedelta64(int(step[:-1]), step[-1].upper())
+
+
+
+
+"""
 bin size
 p value
 diff btw time windows
 
 
 """
+
+
+
+init_clock_time = time.time()
 
 
 #Constants
@@ -125,12 +180,12 @@ _day = np.timedelta64(1,"D")
 
 
 
-print("testA")
 
+clock_time = time.time()
 
+print("Loading parameters...")
 
-
-num_knox_iterations = 10
+# Data location parameters
 
 datadir = os.path.join("..", "..", "Data")
 chicago_file_name = "chicago_all_old.csv"
@@ -142,78 +197,76 @@ chicago.set_data_directory(datadir)
 
 
 
-print("testB")
-region_polygon = chicago.get_side(chicago_side)
-
-
-#start_train = np.datetime64("2018-03-01")
-#end_train = np.datetime64("2018-06-01")
-
-#start_train = np.datetime64("2011-03-01")
-#end_train = np.datetime64("2012-01-07")
-#start_test = np.datetime64("2012-02-01")
-#end_test = np.datetime64("2012-03-01")
-
-
+# Test parameters
 
 cell_width = 250
 cell_height = cell_width
 
 
-print("testC")
+
+num_knox_iterations = 10
+knox_tbin_size = "7D"
+knox_tbin_num = 8
+knox_sbin_size = 100
+knox_sbin_num = 12
+
+
+print("...loaded parameters.\nTime taken: {}".format(time.time() - clock_time))
+
+print("Loading data...")
+
+clock_time = time.time()
 
 #points_crime = chicago.load(chicago_file_path, crime_type_set)
 points_crime = chicago.load(chicago_file_path, crime_type_set, type="all")
 
 
-print("testDaaa")
+print("...loaded data.\nTime taken: {}".format(time.time() - clock_time))
 
-print(inspect.getmodule(chicago))
 
 ### OBTAIN GRIDDED REGION
+
+clock_time = time.time()
+print("Loading region and data subset...")
 
 # Obtain polygon shapely object for region of interest
 region_polygon = chicago.get_side(chicago_side)
 
-print("testE1aaa")
 # Obtain data set
 points_crime_region = open_cp.geometry.intersect_timed_points(points_crime, region_polygon)
 
-print("testE2")
 # Obtain grid with cells only overlaid on relevant region
-masked_grid_region = open_cp.geometry.mask_grid_by_intersection(region_polygon, open_cp.data.Grid(xsize=cell_width, ysize=cell_height, xoffset=0, yoffset=0))
+masked_grid_region = open_cp.geometry.mask_grid_by_intersection(
+        region_polygon, 
+        open_cp.data.Grid(
+                xsize=cell_width, 
+                ysize=cell_height, 
+                xoffset=0, 
+                yoffset=0))
 
-print("testE3")
 # Get a list/tuple of all cellcoords in the region
 cellcoordlist_region = getRegionCells(masked_grid_region)
 
-print("testE4")
 # Obtain number of cells in the grid that contain relevant geometry
 # (i.e., not the full rectangular grid, only relevant cells)
 num_cells_region = len(cellcoordlist_region)
 
-print("testE5")
+print("...loaded region and data subset.\nTime taken: {}".format(time.time() - clock_time))
 
 
 
+earliest_time = "2018-01-01"
+latest_time = "2019-01-01"
+time_step = "1M"
+
+start_times = generateDateRange(earliest_time, latest_time, time_step)
 
 
 
-
-
-
-
-time_windows = []
-for start_year in range(2001,2018):
-    start_jan = np.datetime64("{}-01-01".format(start_year))
-    end_jan = np.datetime64("{}-01-01".format(start_year+1))
-    start_jun = np.datetime64("{}-06-01".format(start_year))
-    end_jun = np.datetime64("{}-06-01".format(start_year+1))
-    time_windows.append((start_jan, end_jan))
-    time_windows.append((start_jun, end_jun))
-
-for time_window in time_windows:
-    print(time_window)
+for start_time in start_times:
+    
+    end_time = generateLaterDate(start_time, time_step)
+    print(start_time, end_time)
     
     
     
@@ -223,8 +276,8 @@ for time_window in time_windows:
     
     # Get subset of data for training
     points_crime_region_train = getTimedPointsInTimeRange(points_crime_region, 
-                                                      time_window[0], 
-                                                      time_window[1])
+                                                      start_time, 
+                                                      end_time)
     
     
     
@@ -249,6 +302,22 @@ for time_window in time_windows:
     
     
     """
+    # This section of code will output the Knox statistic info to a text file,
+    #  containing the following for each experiment:
+    #  - newline
+    #  - start date
+    #  - end date
+    #  - number of events
+    #  - "p values"
+    #  - one line for each space bin,
+    #     holding (space-separated) p values for each time bin
+    #  - "statistics"
+    #  - one line for each space bin,
+    #  -  holding (space-separated) count for each time bin
+    #  - "distribution"
+    #  - for each space&time bin, counts from n Monte Carlo iterations
+    #     *(currently badly formatted, brackets and newlines to strip)
+    #  - newline
     outfilebase = "knox_sschi_burg_cell{}_sbin{}_tbin{}_iter{}.txt".format(cell_width, 100, 7, num_knox_iterations)
     outfilename = os.path.join(datadir, outfilebase)
     

@@ -210,6 +210,7 @@ chicago.set_data_directory(datadir)
 
 
 
+
 exp_limit = 100
 num_time_bins = 10
 num_dist_bins = 20
@@ -335,7 +336,7 @@ for exp_num, exp in enumerate(knox_data):
     #print("Exp num {}".format(exp_num))
     #print(exp.ratios)
     
-    if exp_num<10:
+    if exp_num<15:
         plot_signif_knox_ratios(exp, sbin_size, tbin_size, 0.05)
     
     
