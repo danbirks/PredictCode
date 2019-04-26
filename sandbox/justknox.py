@@ -80,6 +80,26 @@ def getRegionCells(grid):
 
 
 
+def makeBins(size, num):
+    return list( (i*size, (i+1)*size) for i in range(num))
+
+
+
+
+
+def getKnoxResult(data, num_iter, sbins, tbins, tbin_unit="days"):
+    
+    knox = open_cp.knox.Knox()
+    knox.set_time_bins(tbins, unit=tbin_unit)
+    knox.space_bins = sbins
+    knox.data = data
+    result = knox.calculate(iterations=num_iter)
+    return result
+    
+
+
+
+
 """
 knox_ratio
 Computes the "knox ratio", defined as being:
@@ -205,10 +225,31 @@ cell_height = cell_width
 
 
 num_knox_iterations = 10
-knox_tbin_size = "7D"
-knox_tbin_num = 8
-knox_sbin_size = 100
+
+knox_sbin_size = 100 #meters
 knox_sbin_num = 12
+knox_tbin_size = 7 #days
+knox_tbin_num = 8
+
+knox_sbins = makeBins(knox_sbin_size, knox_sbin_num)
+knox_tbins = makeBins(knox_tbin_size, knox_tbin_num)
+
+
+
+
+earliest_time = "2017-10-01"
+latest_time = "2019-01-02"
+time_step = "1M"
+time_len = "2M"
+
+start_times = generateDateRange(earliest_time, latest_time, time_step)
+
+for t in start_times:
+    print(t)
+
+sys.exit(0)
+
+
 
 
 print("...loaded parameters.\nTime taken: {}".format(time.time() - clock_time))
@@ -255,17 +296,11 @@ print("...loaded region and data subset.\nTime taken: {}".format(time.time() - c
 
 
 
-earliest_time = "2018-01-01"
-latest_time = "2019-01-01"
-time_step = "1M"
-
-start_times = generateDateRange(earliest_time, latest_time, time_step)
-
 
 
 for start_time in start_times:
     
-    end_time = generateLaterDate(start_time, time_step)
+    end_time = generateLaterDate(start_time, time_len)
     print(start_time, end_time)
     
     
@@ -281,18 +316,15 @@ for start_time in start_times:
     
     
     
+    num_events = len(points_crime_region_train.timestamps)
+    
+    print("Number of events: {}".format(num_events))
     
     
-    print("Number of events: {}".format(len(points_crime_region_train.timestamps)))
-    #sys.exit(0)
-    
-    
-    
-    knox = open_cp.knox.Knox()
-    knox.set_time_bins([(i*7,i*7+7) for i in range(10)], unit="days")
-    knox.space_bins = list( (i*100,i*100+100) for i in range(20) )
-    knox.data = points_crime_region_train
-    result = knox.calculate(iterations=num_knox_iterations)
+    knox_result = getKnoxResult(points_crime_region_train, 
+                                num_knox_iterations, 
+                                knox_sbins, 
+                                knox_tbins)
     
     
     
@@ -301,7 +333,6 @@ for start_time in start_times:
     
     
     
-    """
     # This section of code will output the Knox statistic info to a text file,
     #  containing the following for each experiment:
     #  - newline
@@ -318,33 +349,43 @@ for start_time in start_times:
     #  - for each space&time bin, counts from n Monte Carlo iterations
     #     *(currently badly formatted, brackets and newlines to strip)
     #  - newline
-    outfilebase = "knox_sschi_burg_cell{}_sbin{}_tbin{}_iter{}.txt".format(cell_width, 100, 7, num_knox_iterations)
+    outfilebase = "knox_sschi_burg_sbin{}_tbin{}_iter{}.txt".format(
+                                                knox_sbin_size, 
+                                                knox_tbin_size, 
+                                                num_knox_iterations)
     outfilename = os.path.join(datadir, outfilebase)
     
     with open(outfilename,"a") as fout:
+        fout.write(str(start_time))
         fout.write("\n")
-        fout.write(str(time_window[0]))
+        fout.write(str(end_time))
         fout.write("\n")
-        fout.write(str(time_window[1]))
-        fout.write("\n")
-        fout.write(str(len(points_crime_region_train.timestamps)))
+        fout.write(str(num_events))
         fout.write("\n")
         fout.write("p values\n")
-        for i in range(len(result.space_bins)):
-            fout.write(" ".join([str(result.pvalue(i,j)) for j in range(len(result.time_bins))]))
+        for i in range(knox_sbin_num):
+            fout.write(" ".join([str(knox_result.pvalue(i,j)) for j in range(knox_tbin_num)]))
             fout.write("\n")
         fout.write("statistics\n")
-        for i in range(len(result.space_bins)):
-            fout.write(" ".join([str(result.statistic(i,j)) for j in range(len(result.time_bins))]))
+        for i in range(knox_sbin_num):
+            fout.write(" ".join([str(knox_result.statistic(i,j)) for j in range(knox_tbin_num)]))
             fout.write("\n")
         fout.write("distribution\n")
-        for i in range(len(result.space_bins)):
-            fout.write(" ".join([str(result.distribution(i,j)) for j in range(len(result.time_bins))]))
+        for i in range(knox_sbin_num):
+            fout.write(" ".join([str(knox_result.distribution(i,j)) for j in range(knox_tbin_num)]))
             fout.write("\n")
         fout.write("\n")
-    """
     
     
+    
+    
+    
+    
+    
+    
+    
+    
+    continue
     
     
     
@@ -354,7 +395,7 @@ for start_time in start_times:
     
     
     mappable = plt.cm.ScalarMappable(cmap=yellow_to_red)
-    mappable.set_array(list(all_ratios(result)))
+    mappable.set_array(list(all_ratios(knox_result)))
     mappable.autoscale()
     
     
@@ -374,25 +415,25 @@ for start_time in start_times:
         
         fig, ax = plt.subplots(figsize=(16,4))
         
-        xmin = min(x for x,y in result.space_bins)
-        xmax = max(y for x,y in result.space_bins)
+        xmin = min(x for x,y in knox_result.space_bins)
+        xmax = max(y for x,y in knox_result.space_bins)
         ax.set(xlim=(xmin, xmax), xlabel="Distance in metres")
         
         _day = np.timedelta64(1,"D")
-        ymin = min(t / _day for t,s in result.time_bins)
-        ymax = max(s / _day for t,s in result.time_bins)
+        ymin = min(t / _day for t,s in knox_result.time_bins)
+        ymax = max(s / _day for t,s in knox_result.time_bins)
         ax.set(ylim=(ymin, ymax), ylabel="Time in days")
         
         
-        ax.set_title("Knox, {} events from {} to {}, p={}".format(len(points_crime_region_train.timestamps), time_window[0], time_window[1], p_thresh))
+        ax.set_title("Knox, {} events from {} to {}, p={}".format(len(points_crime_region_train.timestamps), start_time, end_time, p_thresh))
         
         
         
-        for i, space_bin in enumerate(result.space_bins):
-            for j, time_bin in enumerate(result.time_bins):
-                if result.pvalue(i,j) >= p_thresh:
+        for i, space_bin in enumerate(knox_result.space_bins):
+            for j, time_bin in enumerate(knox_result.time_bins):
+                if knox_result.pvalue(i,j) >= p_thresh:
                     continue
-                ratio = knox_ratio(result.statistic(i,j), result.distribution(i,j))
+                ratio = knox_ratio(knox_result.statistic(i,j), knox_result.distribution(i,j))
                 x, y = space_bin[0], time_bin[0] / _day
                 width = space_bin[1] - space_bin[0]
                 height = (time_bin[1] - time_bin[0]) / _day
