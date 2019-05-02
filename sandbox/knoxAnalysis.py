@@ -71,10 +71,9 @@ class KnoxEntry:
         self.start_date = start_date
         self.end_date = end_date
         self.num_events = num_events
-        self.pvals = []
         self.stats = []
-        self.dists = []
         self.medians = []
+        self.pvals = []
         self.ratios = []
         
 
@@ -133,10 +132,7 @@ def get_bandwidths_from_knox(pvalue_array, selection="contig_to_axis", sig_thres
         sys.exit(1)
     signif_array = significant_cells(pvalue_array, sig_thresh=sig_thresh)
     array_dims = np.shape(signif_array)
-    #print("pvals")
-    #print(pvalue_array)
-    #print("signif")
-    #print(signif_array)
+    
     if signif_array[0,0] == False:
         print("Warning: Knox statistic of smallest time/space bin is not significant!")
         return (-1,-1)
@@ -177,19 +173,19 @@ def plot_signif_knox_ratios(knox_entry: KnoxEntry, sbin_size, tbin_size, p_thres
     
     array_dims = np.shape(knox_entry.pvals)
     xmin = 0
-    xmax = array_dims[0] * sbin_size
+    xmax = array_dims[1] * sbin_size
     ax.set(xlim=(xmin, xmax), xlabel="Distance in metres")
     
     ymin = 0
-    ymax = array_dims[1] * tbin_size
+    ymax = array_dims[0] * tbin_size
     ax.set(ylim=(ymin, ymax), ylabel="Time in days")
     
     ax.set_title("Knox, {} events from {} to {}, p={}".format(knox_entry.num_events, knox_entry.start_date, knox_entry.end_date, p_thresh))
     
-    for (sbin_index,tbin_index), pval in np.ndenumerate(knox_entry.pvals):
+    for (tbin_index,sbin_index), pval in np.ndenumerate(knox_entry.pvals):
         if pval >= p_thresh:
             continue
-        p = matplotlib.patches.Rectangle((sbin_index*sbin_size, tbin_index*tbin_size), sbin_size, tbin_size, fc=mappable.to_rgba(knox_entry.ratios[sbin_index,tbin_index]))
+        p = matplotlib.patches.Rectangle((sbin_index*sbin_size, tbin_index*tbin_size), sbin_size, tbin_size, fc=mappable.to_rgba(knox_entry.ratios[tbin_index,sbin_index]))
         ax.add_patch(p)
     
     cbar = fig.colorbar(mappable, orientation="vertical")
@@ -201,69 +197,72 @@ def plot_signif_knox_ratios(knox_entry: KnoxEntry, sbin_size, tbin_size, p_thres
 
 
 datadir = os.path.join("..", "..", "Data")
+
+
+"""
 chicago_file_name = "chicago_all_old.csv"
 chicago_side = "South"
 #crime_type_set = {"THEFT"}
 crime_type_set = {"BURGLARY"}
 chicago_file_path = os.path.join(datadir, chicago_file_name)
 chicago.set_data_directory(datadir)
+"""
 
 
-
+#fname = "knox_ssX_burg_sbin12-100_tbin8-7_iter1000_170901-1M_16-3M.txt"
+#fname = "knox_ssX_burg_sbin12-100_tbin8-7_iter1000_020101-1M_12-3M.txt"
+#fname = "knox_ssX_burg_sbin12-100_tbin8-7_iter1000_060101-1M_12-3M.txt"
+#fname = "knox_ssX_burg_sbin15-100_tbin10-7_iter100_050101-6M_4-12M.txt"
+#fname = "knox_ssX_burg_sbin15-100_tbin10-7_iter100_180101-6M_2-12M.txt"
+#fname = "knox_ssX_burg_sbin15-100_tbin10-7_iter100_170301-1M_5-12M.txt"
+fname = "knox_ssX_burg_sbin15-100_tbin10-7_iter500_170501-6M_1-12M.txt"
+fname_parts = fname.split(".")[0].split("_")
+fname_parts_sbin = fname_parts[3].lstrip("sbin").split("-")
+fname_parts_tbin = fname_parts[4].lstrip("tbin").split("-")
 
 exp_limit = 100
-num_time_bins = 10
-num_dist_bins = 20
-num_knox_iters = 100
-sbin_size = 100
-tbin_size = 7
+num_time_bins = int(fname_parts_tbin[0])
+num_dist_bins = int(fname_parts_sbin[0])
+num_knox_iters = int(fname_parts[5].lstrip("iter"))
+sbin_size = int(fname_parts_sbin[1])
+tbin_size = int(fname_parts_tbin[1])
 
-knox_file_path = os.path.join(datadir, 
-                              "knox_190330_sschi_burg_cell250_sbin100_tbin7_iter100.txt")
+signif_cutoff = 0.05
+
+# Expected file format: For each experiment,
+#  - start date
+#  - end date
+#  - number of events
+#  - "Knox Statistics"
+#  - one line for each time bin,
+#  -  holding (space-separated) count for each space bin
+#  - "Monte Carlo Medians"
+#  - one line for each time bin,
+#  -  holding (space-separated) median Monte Carlo count for each space bin
+#  - "P Values"
+#  - one line for each time bin,
+#     holding (space-separated) p values for each space bin
+#  - newline
+
+knox_file_path = os.path.join(datadir, fname)
+
 with open(knox_file_path) as kf:
     exp_num = -1
-    stype = "lastline"
+    stype = "info"
     sctr = 0
     sdata = []
     knox_data = []
     for lnum, kline in enumerate(kf):
         kline = kline.strip()
         
-        #if stype != "distribution":
-        #    print("{}:{}:{}".format(exp_num, lnum, kline))
-        #if lnum >50:
-        #    break
-        
-        
-        if len(kline)==0:
-            if stype == "distribution":
-                knox_data[-1].dists = np.asarray(sdata).reshape(num_dist_bins, num_time_bins, num_knox_iters)
-                knox_data[-1].medians = np.zeros((num_dist_bins, num_time_bins))
-                knox_data[-1].ratios = np.zeros((num_dist_bins, num_time_bins))
-                for i in range(num_dist_bins):
-                    for j in range(num_time_bins):
-                        knox_data[-1].medians[i][j] = statistics.median(knox_data[-1].dists[i][j])
-                knox_data[-1].ratios = knox_data[-1].stats/knox_data[-1].medians
-                
-                stype = "lastline"
-                continue
-            elif stype != "lastline":
-                print("Error, unexpected empty line at {}:{}".format(exp_num, lnum))
-                sys.exit(1)
-            exp_num += 1
-            stype = "info"
-            sctr = 0
-            sdata = []
-            if exp_num >= exp_limit:
-                break
-            continue
         
         if stype == "info":
-            if kline == "p values":
+            # If we're done with the info section, store the info we read
+            if kline == "Knox Statistics":
                 knox_data.append(KnoxEntry(*sdata))
                 sdata = []
                 sctr = 0
-                stype = "p values"
+                stype = "Knox Statistics"
                 continue
             if sctr in [0,1]:
                 sdata.append(np.datetime64(kline))
@@ -274,25 +273,14 @@ with open(knox_file_path) as kf:
                 sys.exit(1)
             sctr += 1
             continue
-        elif stype == "p values":
-            if kline == "statistics":
-                knox_data[-1].pvals = sdata
-                sdata = []
-                sctr = 0
-                stype = "statistics"
-                continue
-            next_row = np.array([float(x) for x in kline.split()])
-            if sctr == 0:
-                sdata = next_row
-            else:
-                sdata = np.vstack([sdata, next_row])
-            sctr += 1
-        elif stype == "statistics":
-            if kline == "distribution":
+        
+        
+        elif stype == "Knox Statistics":
+            if kline == "Monte Carlo Medians":
                 knox_data[-1].stats = sdata
                 sdata = []
                 sctr = 0
-                stype = "distribution"
+                stype = "Monte Carlo Medians"
                 continue
             next_row = np.array([int(float(x)) for x in kline.split()])
             if sctr == 0:
@@ -300,35 +288,52 @@ with open(knox_file_path) as kf:
             else:
                 sdata = np.vstack([sdata, next_row])
             sctr += 1
-        elif stype == "distribution":
+        
+        
+        
+        elif stype == "Monte Carlo Medians":
+            if kline == "P Values":
+                knox_data[-1].medians = sdata
+                sdata = []
+                sctr = 0
+                stype = "P Values"
+                continue
+            next_row = np.array([float(x) for x in kline.split()])
+            if sctr == 0:
+                sdata = next_row
+            else:
+                sdata = np.vstack([sdata, next_row])
+            sctr += 1
+        
+        
+        
+        elif stype == "P Values":
+            if kline == "":
+                knox_data[-1].pvals = sdata
+                sdata = []
+                sctr = 0
+                stype = "info"
+                exp_num += 1
+                if exp_num >= exp_limit:
+                    print("Warning! Reached experiment limit of {}".format(exp_limit))
+                    break
+                continue
+            next_row = np.array([float(x) for x in kline.split()])
+            if sctr == 0:
+                sdata = next_row
+            else:
+                sdata = np.vstack([sdata, next_row])
             sctr += 1
             
-            # [...
-            # start of dist for 1st cell in row
-            if kline[0]=="[":
-                kline = kline[1:]
-                
-            # ...] [...
-            # end of one dist, start of another, in row
-            elif "] [" in kline:
-                kline = " ".join(kline.split("] ["))
-                
-            # ...]
-            # end of dist for last cell in row
-            elif kline[-1] == "]":
-                kline = kline[:-1]
-                
-            # ...
-            # typical line of numbers in middle of a dist
-            else:
-                pass
-            
-            sdata += [int(float(x)) for x in kline.split()]
         
+
+
+for exp_index, exp in enumerate(knox_data):
+    knox_data[exp_index].ratios = exp.stats/exp.medians
 
 print("\# events per experiment")
 for exp in knox_data:
-    print("{}:{}".format(exp.start_date,exp.num_events))
+    print("{}:{}".format(exp.end_date,exp.num_events))
 
 bandwidth_selections = ["along_axis", "contig_to_axis","contig_anywhere"]
 bandwidth_pairs_dict = defaultdict(list)
@@ -336,8 +341,8 @@ for exp_num, exp in enumerate(knox_data):
     #print("Exp num {}".format(exp_num))
     #print(exp.ratios)
     
-    if exp_num<15:
-        plot_signif_knox_ratios(exp, sbin_size, tbin_size, 0.05)
+    if exp_num<exp_limit:
+        plot_signif_knox_ratios(exp, sbin_size, tbin_size, signif_cutoff)
     
     
     for band_sel in bandwidth_selections:
@@ -345,12 +350,23 @@ for exp_num, exp in enumerate(knox_data):
 
 
 
+sys.exit(0)
+
+
+
+
+
+xcoords = [exp.end_date for exp in knox_data]
+
 
 fig, ax = plt.subplots(figsize=(12,4))
 for i, band_sel in enumerate(bandwidth_selections):
-    ax.plot(np.linspace(2001, 2017.5, 34), [(x[0]+1+(.1*i))*sbin_size for x in bandwidth_pairs_dict[band_sel]])
+    ycoords = [(x[0]+1+(.1*i))*sbin_size for x in bandwidth_pairs_dict[band_sel]]
+    ax.plot(xcoords, ycoords)
 ax.legend(bandwidth_selections)
 ax.set_title("Spatial bandwidths determined by Knox, in meters")
+
+
 
 
 fig, ax = plt.subplots(figsize=(12,4))

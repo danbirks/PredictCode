@@ -147,21 +147,16 @@ class Knox(_predictors.DataTrainer):
             An array whose `[i,j]` entry corresponds to space bin [i] and
           time bin [j].  Each entry is a pair `(statistic, p-value)`.
         """
-        print("testing 123")
         points = self.data.coords.T
-        print("got points")
         dists = _distance.pdist(points)
         times = (self.data.timestamps - self.data.timestamps[0]) / _np.timedelta64(1, "ms")
-        print("got dists and times")
         time_distances = distances(times)
-        print("got time_distances")
         
         stats = self._stat(dists, time_distances)
-        print("got stats")
         monte_carlo_cells = []
         for iternum in range(iterations):
-            if iternum%1==0:
-                print(iternum)
+            #if iternum%1==0:
+            #    print(iternum)
             _np.random.shuffle(times)
             time_distances = distances(times)
             monte_carlo_cells.append(self._stat(dists, time_distances))

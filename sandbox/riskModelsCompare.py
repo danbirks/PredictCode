@@ -64,28 +64,49 @@ _day = np.timedelta64(1,"D")
 
 
 
+
+
+
+def standardizeTimeStep(step):
+    step_num = int(step[:-1])
+    step_unit = step[-1].upper()
+    if step_unit not in "YMWD":
+        print("This function only recognizes Y/M/W/D as time units")
+        sys.exit(1)
+    if step_unit == "W":
+        step_num *= 7
+        step_unit = "D"
+    return step_num, step_unit
+
+
 #
 # start: "2018-09-01"
 # end: "2019-03-01"
 # step: "3D", "2W", "6M", "1Y", etc
 # output is always array containing type datetime64[D]
 def generateDateRange(start, end, step):
-    step_num = int(step[:-1])
-    step_unit = step[-1].upper()
-    if step_unit not in "YMWD":
-        print("generateDateRange only recognizes Y/M/W/D as units")
-        sys.exit(1)
-    if step_unit == "W":
-        step_num *= 7
-        step_unit = "D"
+    step_num, step_unit = standardizeTimeStep(step)
     start_datetime = np.datetime64(start)
     end_datetime = np.datetime64(end)
     date_range = np.arange(start_datetime, end_datetime, step=np.timedelta64(step_num, step_unit), dtype="datetime64[{}]".format(step_unit))
     return np.array(date_range, dtype="datetime64[D]")
 
 
+
 def generateLaterDate(start, step):
-    return np.datetime64(start) + np.timedelta64(int(step[:-1]), step[-1].upper())
+    step_num, step_unit = standardizeTimeStep(step)
+    converted_start = np.datetime64(start, step_unit)
+    later_date = converted_start + np.timedelta64(step_num, step_unit)
+    return np.datetime64(later_date, "D")
+
+
+def generateEarlierDate(end, step):
+    return generateLaterDate(end, "-"+step)
+    #step_num, step_unit = standardizeTimeStep(step)
+    #converted_end = np.datetime64(end, step_unit)
+    #earlier_date = converted_end - np.timedelta64(step_num, step_unit)
+    #return np.datetime64(earlier_date, "D")
+
 
 
 
@@ -264,15 +285,17 @@ def all_knox_ratios(result):
 
 
 
-def runPhsModel(training_data, grid, rand_seed=None):
-    # Set RNG seed if given
-    if rand_seed != None:
-        np.random.seed(rand_seed)
+def runPhsModel(training_data, grid, time_unit, space_unit):
+    
     
     grid_cells = getRegionCells(grid)
+    print(type(grid))
+    print(type(grid_cells))
+    print("early exit")
+    sys.exit(1)
     
     # Obtain model and prediction on grid cells
-    phs_pred = phs.ProspectiveHotSpot()
+    phs_pred = phs.ProspectiveHotSpot(grid)
     phs_pred.data = training_data
     
     #??? rhs_pred.weight = retro.Quartic(bandwidth = bandwidth)
@@ -356,6 +379,7 @@ plot_rhs = False
 plot_rhs_avg = False
 rhs_num = 4
 rhs_band_step = cell_width
+plot_phs = True
 
 plot_random_seed = 1
 
@@ -438,9 +462,12 @@ test_data_counts = []
 test_data_dates = []
 exp_times = []
 
-start_train_list = generateDateRange("2018-01-01", "2018-05-01", "1D")
-total_num_exp = len(start_train_list)
-for exp_index, start_train in enumerate(start_train_list):
+
+start_test_list = generateDateRange("2018-01-01", "2018-02-01", "1D")
+
+
+total_num_exp = len(start_test_list)
+for exp_index, start_test in enumerate(start_test_list):
     
     exp_start_time = time.time()
     
@@ -448,11 +475,14 @@ for exp_index, start_train in enumerate(start_train_list):
         print("Running experiment {}/{}...".format(exp_index, total_num_exp))
     
     # Declare time ranges of training and testing data
-    end_train = generateLaterDate(start_train, train_len)
-    start_test = end_train
+    end_train = start_test
+    start_train = generateEarlierDate(end_train, train_len)
     end_test = generateLaterDate(start_test, test_len)
     
     test_data_dates.append(start_test)
+    
+    
+    #print(start_train, end_train, start_test, end_test)
     
     
     
@@ -563,6 +593,20 @@ for exp_index, start_train in enumerate(start_train_list):
     ### CREATE PHS MODEL AROUND HERE
     
     
+    if plot_phs:
+        cellcoordlist_sort_phs = runPhsModel(points_crime_region_train, 
+                                             masked_grid_region, 
+                                             time_unit, 
+                                             dist_unit)
+        
+        pass
+    
+    
+    
+    
+    
+    
+    
     
     
     
@@ -590,6 +634,9 @@ print("Average experiment time: {}".format(exp_times_total/len(exp_times)))
 print("Min experiment time: {}".format(exp_times_sorted[0]))
 print("Max experiment time: {}".format(exp_times_sorted[-1]))
 
+
+
+sys.exit(0)
 
 
 
@@ -731,75 +778,6 @@ ax.legend(names_for_legend)
 
 
 
-
-
-
-
-
-"""
-### KNOX
-print("Doing Knox stuff")
-
-
-knox_calculator = open_cp.knox.Knox()
-print("a")
-knox_calculator.data = points_crime_region_train
-print("b")
-knox_calculator.space_bins = knox_space_bins
-print("c")
-knox_calculator.set_time_bins(knox_time_bins, unit="days")
-print("d")
-knox_result = knox_calculator.calculate(iterations=500)
-
-print("Got knox_result")
-
-mappable = plt.cm.ScalarMappable(cmap = yellow_to_red)
-
-mappable.set_array(list(all_knox_ratios(knox_result)))
-mappable.autoscale
-
-print("Made mappable")
-
-x_axis_min = min(x for x,y in knox_result.space_bins)
-x_axis_max = max(y for x,y in knox_result.space_bins)
-
-y_axis_min = min(t for t,s in knox_result.time_bins) / _day
-y_axis_max = max(s for t,s in knox_result.time_bins) / _day
-
-
-ax.set(xlim=(x_axis_min, x_axis_max), xlabel = "Distance in meters")
-
-ax.set(ylim = (y_axis_min, y_axis_max), ylabel = "Time in days")
-
-print("Made axes")
-
-for space_index, space_bin in enumerate(knox_result.space_bins):
-    for time_index, time_bin in enumerate(knox_result.time_bins):
-        print("{},{},{}".format(space_index, time_index, knox_result.pvalue(space_index, time_index)))
-        #print("{},{}".format(space_bin, time_bin))
-        if knox_result.pvalue(space_index, time_index) >= 0.05:
-            continue
-        ratio = knox_ratio(knox_result.statistic(space_index, time_index), knox_result.distribution(space_index, time_index))
-        print(ratio)
-        patch_width = space_bin[1] - space_bin[0]
-        patch_height = (time_bin[1] - time_bin[0])/_day
-        
-        x_coord = space_bin[0]
-        y_coord = time_bin[0]/_day
-        new_patch = matplotlib.patches.Rectangle((x_coord, y_coord), patch_width, patch_height, fc=mappable.to_rgba(knox_ratio))
-        print(x_coord, y_coord, patch_width, patch_height, space_bin, time_bin)
-        ax.add_patch(new_patch)
-
-print("Done adding patches")
-
-
-#colorbar = fig.colorbar(mappable, orientation = "vertical")
-#colorbar.set_label("Knox ratio")
-
-
-
-sys.exit(0)
-"""
 
 
 

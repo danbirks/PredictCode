@@ -19,6 +19,7 @@ import descartes
 from itertools import product
 from collections import Counter
 import random
+import statistics
 import time
 
 # The geopandas module does not come standard with anaconda,
@@ -162,7 +163,11 @@ def generateDateRange(start, end, step):
 
 
 def generateLaterDate(start, step):
-    return np.datetime64(start) + np.timedelta64(int(step[:-1]), step[-1].upper())
+    time_base = step[-1].upper()
+    time_quantity = int(step[:-1])
+    converted_start = np.datetime64(start, time_base)
+    later_date = converted_start + np.timedelta64(time_quantity, time_base)
+    return np.datetime64(later_date, "D")
 
 
 
@@ -224,12 +229,12 @@ cell_height = cell_width
 
 
 
-num_knox_iterations = 10
+num_knox_iterations = 500
 
 knox_sbin_size = 100 #meters
-knox_sbin_num = 12
+knox_sbin_num = 15
 knox_tbin_size = 7 #days
-knox_tbin_num = 8
+knox_tbin_num = 10
 
 knox_sbins = makeBins(knox_sbin_size, knox_sbin_num)
 knox_tbins = makeBins(knox_tbin_size, knox_tbin_num)
@@ -237,17 +242,38 @@ knox_tbins = makeBins(knox_tbin_size, knox_tbin_num)
 
 
 
-earliest_time = "2017-10-01"
-latest_time = "2019-01-02"
-time_step = "1M"
-time_len = "2M"
+earliest_time = "2017-05-01"
+latest_time = "2017-08-02"
+time_step = "6M"
+time_len = "12M"
+date_ref = "".join(earliest_time[2:].split("-"))
+
 
 start_times = generateDateRange(earliest_time, latest_time, time_step)
 
-for t in start_times:
-    print(t)
+num_exp = len(start_times)
 
-sys.exit(0)
+print(start_times[0])
+print(start_times[-1])
+print("Num exp: {}".format(num_exp))
+
+
+
+
+outfilebase = \
+    "knox_ssX_burg_sbin{}-{}_tbin{}-{}_iter{}_{}-{}_{}-{}.txt".format(
+                                            knox_sbin_num, 
+                                            knox_sbin_size, 
+                                            knox_tbin_num, 
+                                            knox_tbin_size, 
+                                            num_knox_iterations, 
+                                            date_ref, 
+                                            time_step, 
+                                            num_exp, 
+                                            time_len)
+outfilename = os.path.join(datadir, outfilebase)
+
+print("outfile: {}".format(outfilename))
 
 
 
@@ -296,12 +322,19 @@ print("...loaded region and data subset.\nTime taken: {}".format(time.time() - c
 
 
 
+all_exp_clock_time = time.time()
+exp_clock_time_list = []
 
+print("Starting experiments...")
 
-for start_time in start_times:
+for exp_index, start_time in enumerate(start_times):
+    
+    exp_clock_time = time.time()
     
     end_time = generateLaterDate(start_time, time_len)
-    print(start_time, end_time)
+    
+    print("Exp {}/{}, start {} end {}".format(exp_index+1, 
+                                              num_exp, start_time, end_time))
     
     
     
@@ -335,25 +368,20 @@ for start_time in start_times:
     
     # This section of code will output the Knox statistic info to a text file,
     #  containing the following for each experiment:
-    #  - newline
     #  - start date
     #  - end date
     #  - number of events
-    #  - "p values"
-    #  - one line for each space bin,
-    #     holding (space-separated) p values for each time bin
-    #  - "statistics"
-    #  - one line for each space bin,
-    #  -  holding (space-separated) count for each time bin
-    #  - "distribution"
-    #  - for each space&time bin, counts from n Monte Carlo iterations
-    #     *(currently badly formatted, brackets and newlines to strip)
+    #  - "Knox Statistics"
+    #  - one line for each time bin,
+    #  -  holding (space-separated) count for each space bin
+    #  - "Monte Carlo Medians"
+    #  - one line for each time bin,
+    #  -  holding (space-separated) median Monte Carlo count for each space bin
+    #  - "P Values"
+    #  - one line for each time bin,
+    #     holding (space-separated) p values for each space bin
     #  - newline
-    outfilebase = "knox_sschi_burg_sbin{}_tbin{}_iter{}.txt".format(
-                                                knox_sbin_size, 
-                                                knox_tbin_size, 
-                                                num_knox_iterations)
-    outfilename = os.path.join(datadir, outfilebase)
+    
     
     with open(outfilename,"a") as fout:
         fout.write(str(start_time))
@@ -362,85 +390,29 @@ for start_time in start_times:
         fout.write("\n")
         fout.write(str(num_events))
         fout.write("\n")
-        fout.write("p values\n")
-        for i in range(knox_sbin_num):
-            fout.write(" ".join([str(knox_result.pvalue(i,j)) for j in range(knox_tbin_num)]))
+        fout.write("Knox Statistics\n")
+        for i in range(knox_tbin_num):
+            fout.write(" ".join([str(knox_result.statistic(j,i)) for j in range(knox_sbin_num)]))
             fout.write("\n")
-        fout.write("statistics\n")
-        for i in range(knox_sbin_num):
-            fout.write(" ".join([str(knox_result.statistic(i,j)) for j in range(knox_tbin_num)]))
+        fout.write("Monte Carlo Medians\n")
+        for i in range(knox_tbin_num):
+            fout.write(" ".join([str(statistics.median(knox_result.distribution(j,i))) for j in range(knox_sbin_num)]))
             fout.write("\n")
-        fout.write("distribution\n")
-        for i in range(knox_sbin_num):
-            fout.write(" ".join([str(knox_result.distribution(i,j)) for j in range(knox_tbin_num)]))
+        fout.write("P Values\n")
+        for i in range(knox_tbin_num):
+            fout.write(" ".join([str(knox_result.pvalue(j,i)) for j in range(knox_sbin_num)]))
             fout.write("\n")
         fout.write("\n")
     
     
+    exp_clock_time_list.append(time.time()-exp_clock_time)
     
-    
-    
-    
-    
-    
-    
-    
-    continue
-    
-    
-    
-    
-    
-    
-    
-    
-    mappable = plt.cm.ScalarMappable(cmap=yellow_to_red)
-    mappable.set_array(list(all_ratios(knox_result)))
-    mappable.autoscale()
-    
-    
-    
-    
-    
-    
-    p_thresh_list = [0.10, 0.05, 0.01]
-    
-    for p_thresh in p_thresh_list:
-        
-        
-        # !!! Add display of pvalues in a grid. Only need 1 grid per dataset,
-        #  i.e., 1 per trio of p-thresholds
-        
-        
-        
-        fig, ax = plt.subplots(figsize=(16,4))
-        
-        xmin = min(x for x,y in knox_result.space_bins)
-        xmax = max(y for x,y in knox_result.space_bins)
-        ax.set(xlim=(xmin, xmax), xlabel="Distance in metres")
-        
-        _day = np.timedelta64(1,"D")
-        ymin = min(t / _day for t,s in knox_result.time_bins)
-        ymax = max(s / _day for t,s in knox_result.time_bins)
-        ax.set(ylim=(ymin, ymax), ylabel="Time in days")
-        
-        
-        ax.set_title("Knox, {} events from {} to {}, p={}".format(len(points_crime_region_train.timestamps), start_time, end_time, p_thresh))
-        
-        
-        
-        for i, space_bin in enumerate(knox_result.space_bins):
-            for j, time_bin in enumerate(knox_result.time_bins):
-                if knox_result.pvalue(i,j) >= p_thresh:
-                    continue
-                ratio = knox_ratio(knox_result.statistic(i,j), knox_result.distribution(i,j))
-                x, y = space_bin[0], time_bin[0] / _day
-                width = space_bin[1] - space_bin[0]
-                height = (time_bin[1] - time_bin[0]) / _day
-                p = matplotlib.patches.Rectangle((x,y), width, height, fc=mappable.to_rgba(ratio))
-                ax.add_patch(p)
-                
-        cbar = fig.colorbar(mappable, orientation="vertical")
-        cbar.set_label("Knox ratio")
-        
-    
+
+exp_clock_time_list.sort()
+
+print("...Finished experiments.")
+print("Min time: {}".format(exp_clock_time_list[0]))
+print("Max time: {}".format(exp_clock_time_list[-1]))
+print("Avg time: {}".format(sum(exp_clock_time_list)/len(exp_clock_time_list)))
+print("All exp time: {}".format(time.time()-all_exp_clock_time))
+print("Total script time: {}".format(time.time()-init_clock_time))
