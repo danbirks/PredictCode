@@ -81,6 +81,58 @@ class ClassicWeight(Weight):
     def args(self):
         return "C{},{}".format(self.space_bandwidth, self.time_bandwidth)
 
+class ClassicWeightNormalised(Weight):
+    
+    
+    
+    def __init__(self, space_bandwidth=8, time_bandwidth=8, epsilon = 0.1):
+        self.space_bandwidth = space_bandwidth
+        self.time_bandwidth = time_bandwidth
+        self.epsilon = epsilon
+        self.eps_factor = (1-self.epsilon)/(self.epsilon)
+
+    def __call__(self, dt, dd):
+        mask = (dt < self.time_bandwidth) & (dd < self.space_bandwidth)
+        
+        dt_norm = dt * (1/self.time_bandwidth) * (self.eps_factor)
+        dd_norm = dd * (1/self.space_bandwidth) * (self.eps_factor)
+        
+        return mask * 1 / ( (1 + dd_norm) * ( 1 + dt_norm) )
+
+    def __repr__(self):
+        return "ClassicNorm(sb={}, tb={}, e={})".format(self.space_bandwidth, self.time_bandwidth, self.epsilon)
+
+    @property
+    def args(self):
+        return "CN{},{},{}".format(self.space_bandwidth, self.time_bandwidth, self.epsilon)
+
+
+class LinearWeightNormalised(Weight):
+    """Linear weight, :math:`(1-(d/bs))(1-(t/tb))` where :math:`d` is
+    distance and :math:`t` is time and :math:`sb` is space
+    bandwidth and :math:`tb` is time bandwidth.  Default 
+    units are "grid cells" and "weeks", respectively.
+
+    :param space_bandwidth: Distances greater than or equal to this set the
+      weight to 0.
+    :param time_bandwidth: Times greater than or equal to this set the weight
+      to 0.
+    """
+    def __init__(self, space_bandwidth=8, time_bandwidth=8, epsilon = 0.1):
+        self.space_bandwidth = space_bandwidth
+        self.time_bandwidth = time_bandwidth
+
+    def __call__(self, dt, dd):
+        mask = (dt < self.time_bandwidth) & (dd < self.space_bandwidth)
+        return mask * (1-(dd/self.space_bandwidth)) * (1-(dt/self.time_bandwidth))
+
+    def __repr__(self):
+        return "LinearWeight(sb={}, tb={})".format(self.space_bandwidth, self.time_bandwidth)
+
+    @property
+    def args(self):
+        return "LW{},{}".format(self.space_bandwidth, self.time_bandwidth)
+
 
 class GridDistance(metaclass=_abc.ABCMeta):
     """Abstract base class to calculate the distance between grid cells"""

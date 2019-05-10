@@ -215,7 +215,8 @@ chicago.set_data_directory(datadir)
 #fname = "knox_ssX_burg_sbin15-100_tbin10-7_iter100_050101-6M_4-12M.txt"
 #fname = "knox_ssX_burg_sbin15-100_tbin10-7_iter100_180101-6M_2-12M.txt"
 #fname = "knox_ssX_burg_sbin15-100_tbin10-7_iter100_170301-1M_5-12M.txt"
-fname = "knox_ssX_burg_sbin15-100_tbin10-7_iter500_170501-6M_1-12M.txt"
+#fname = "knox_ssX_burg_sbin15-100_tbin10-7_iter500_170501-6M_1-12M.txt"
+fname = "temp.txt"
 fname_parts = fname.split(".")[0].split("_")
 fname_parts_sbin = fname_parts[3].lstrip("sbin").split("-")
 fname_parts_tbin = fname_parts[4].lstrip("tbin").split("-")

@@ -21,12 +21,12 @@ def row_to_datetime(row):
     datetime_string = row[1]
     return dateutil.parser.parse(datetime_string)
 
-proj = pyproj.Proj({"init" : "epsg:2790"})
+chicago_projection = pyproj.Proj({"init" : "epsg:2790"})
 
-def row_to_coords(row):
+def row_to_coords(row, projection=chicago_projection):
     x = float(row[5])
     y = float(row[4])
-    return proj(x, y)
+    return projection(x, y)
 
 def load_points():
     with open("example.csv") as file:

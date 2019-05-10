@@ -193,6 +193,18 @@ def runRhsModel(training_data, grid, bandwidth=250, rand_seed=None):
     rhs_grid_risk = open_cp.predictors.grid_prediction(rhs_risk, grid)
     rhs_grid_risk_matrix = rhs_grid_risk.intensity_matrix
     
+    
+    #print("rhs_risk")
+    #print(type(rhs_risk))
+    #print("grid")
+    #print(type(grid))
+    #print("rhs_grid_risk")
+    #print(type(rhs_grid_risk))
+    
+    
+    
+    
+    
     # Sort cellcoords by risk in intensity matrix, highest risk first
     return sortCellsByRiskMatrix(grid_cells, rhs_grid_risk_matrix)
     
@@ -241,10 +253,6 @@ def averageRhsModels(training_data, grid, bandwidth=250, num_runs=1, \
     
     # Sort cellcoords by risk in intensity matrix, highest risk first
     return sortCellsByRiskMatrix(grid_cells, master_matrix)
-    
-
-
-
 
 
 
@@ -285,28 +293,43 @@ def all_knox_ratios(result):
 
 
 
-def runPhsModel(training_data, grid, time_unit, space_unit):
+
+
+def runPhsModel(training_data, grid, time_unit, dist_unit, time_bandwidth, dist_bandwidth, epsilon=0.1):
     
     
-    grid_cells = getRegionCells(grid)
-    print(type(grid))
-    print(type(grid_cells))
-    print("early exit")
-    sys.exit(1)
+    
+    
+    
+    grid_cells = getRegionCells(grid=grid)
     
     # Obtain model and prediction on grid cells
-    phs_pred = phs.ProspectiveHotSpot(grid)
-    phs_pred.data = training_data
+    phs_predictor = phs.ProspectiveHotSpot(grid=grid)
+    phs_predictor.data = training_data
     
-    #??? rhs_pred.weight = retro.Quartic(bandwidth = bandwidth)
+    dist_band_in_units = dist_bandwidth/dist_unit
+    time_band_in_units = time_bandwidth/time_unit
     
-    phs_pred.grid = 20 #?????
+    phs_predictor.weight = phs.ClassicWeightNormalised(space_bandwidth=dist_band_in_units, time_bandwidth=time_band_in_units, epsilon=epsilon)
     
-    phs_risk =""#???
+    phs_predictor.time_unit = time_unit
+    phs_predictor.grid = dist_unit
     
-    cutoff_time = end_train
-    phs_pred.predict(cutoff_time, cutoff_time)
-    phs_grid_risk = open_cp.predictors.grid_prediction(phs_risk, grid)
+    cutoff_time = sorted(training_data.timestamps)[-1] + _day
+    
+    phs_grid_risk = phs_predictor.predict(cutoff_time, cutoff_time)
+    
+    
+    #print("phs_risk")
+    #print(type(phs_risk))
+    #print("grid")
+    #print(type(grid))
+    
+    #sys.exit(0)
+    
+    
+    
+    #phs_grid_risk = open_cp.predictors.grid_prediction(phs_risk, grid)
     phs_grid_risk_matrix = phs_grid_risk.intensity_matrix
     
     # Sort cellcoords by risk in intensity matrix, highest risk first
@@ -322,10 +345,116 @@ def runPhsModel(training_data, grid, time_unit, space_unit):
 
 
 
+
+
 def runNaiveCount_model(data_points, grid):
     crime_ctr = countPointsPerCell(data_points, grid)
     grid_cells = getRegionCells(grid)
     return sorted(grid_cells, key=lambda x:crime_ctr[x], reverse=True)
+
+
+
+
+# Given a model name and relevant arguments,
+#  return a sorted list of cells
+def runModelAndSortCells(model_name, model_args):
+    
+    rec_models = ["ideal","random","naivecount","rhs","phs"]
+    if model_name not in rec_models:
+        print("Unrecognized model name: {}".format(model_name))
+        sys.exit(1)
+    
+    
+    
+    if model_name=="ideal":
+        # We need these variables:
+        #   cellcoordlist_region
+        #   cells_testcrime_ctr
+        
+        cellcoordlist_region, cells_testcrime_ctr = model_args
+        
+        return sorted(cellcoordlist_region, 
+                                         key=lambda x:cells_testcrime_ctr[x], 
+                                         reverse=True)
+        
+    if model_name=="random":
+        # We need these variables:
+        #   cellcoordlist_region
+        #   plot_random_seed
+        
+        cellcoordlist_region, plot_random_seed = model_args
+        
+        return RandomlySortCells(cellcoordlist_region, seed=plot_random_seed)
+        
+        
+    
+    points_crime_region_train = model_args[0]
+    masked_grid_region = model_args[1]
+    other_model_args = model_args[2:]
+    
+    if model_name=="naivecount":
+        # We need these variables:
+        #   points_crime_region_train
+        #   masked_grid_region
+        
+        return runNaiveCount_model(points_crime_region_train, masked_grid_region)
+        
+    
+    
+    if model_name=="rhs":
+        # We need these variables:
+        #   points_crime_region_train
+        #   masked_grid_region
+        #   rhs_bandwidth
+        #   rhs_random_seed
+        
+        rhs_bandwidth, rhs_random_seed = other_model_args
+        
+        return runRhsModel(points_crime_region_train,
+                                                   masked_grid_region, 
+                                                   bandwidth = rhs_bandwidth, 
+                                                   rand_seed=rhs_random_seed)
+    
+    if model_name=="phs":
+        # We need these variables:
+        #   points_crime_region_train
+        #   masked_grid_region
+        #   time_unit
+        #   time_bandwidth
+        #   dist_unit
+        #   dist_bandwidth
+        #   epsilon # or option to choose Linear vs Classic?
+        
+        time_unit, time_bandwidth, dist_unit, dist_bandwidth, epsilon = other_model_args
+        
+        
+        #time_unit = np.timedelta64(1, "W")
+        #time_bandwidth = np.timedelta64(4, "W")
+        #dist_unit = 100
+        #dist_bandwidth = 500
+        #epsilon = 0.1
+        
+        
+        return runPhsModel(
+                training_data = points_crime_region_train, 
+                grid = masked_grid_region, 
+                time_unit = time_unit, 
+                dist_unit = dist_unit, 
+                time_bandwidth = time_bandwidth, 
+                dist_bandwidth = dist_bandwidth, 
+                epsilon = epsilon)
+        
+        
+        
+    
+    
+    
+    
+
+
+
+
+
 
 
 
@@ -353,10 +482,12 @@ chicago.set_data_directory(datadir)
 
 
 # Time parameters
-start_train = np.datetime64("2018-03-01")
-end_train = np.datetime64("2018-06-01")
-start_test = np.datetime64("2018-06-01")
-end_test = np.datetime64("2018-08-01")
+
+#start_train = np.datetime64("2018-03-01")
+#end_train = np.datetime64("2018-06-01")
+#start_test = np.datetime64("2018-06-01")
+#end_test = np.datetime64("2018-08-01")
+
 #start_train = np.datetime64("2011-03-01")
 #end_train = np.datetime64("2012-01-07")
 #start_test = np.datetime64("2012-02-01")
@@ -375,7 +506,7 @@ plot_expected_random = False
 plot_ideal = True
 plot_random = True
 plot_naive_count = True
-plot_rhs = False
+plot_rhs = True
 plot_rhs_avg = False
 rhs_num = 4
 rhs_band_step = cell_width
@@ -498,6 +629,19 @@ for exp_index, start_test in enumerate(start_test_list):
     
     
     
+    training_data=points_crime_region_train
+    print(type(training_data))
+    print(type(training_data.timestamps))
+    print(len(training_data.timestamps))
+    sd = sorted(training_data.timestamps)
+    print(sd[0])
+    print(sd[-1])
+    sys.exit(0)
+    
+    
+    
+    
+    
     
     
     ### TESTING DATA, USED FOR EVALUATION
@@ -586,7 +730,7 @@ for exp_index, start_test in enumerate(start_test_list):
                                                num_runs = rhs_num)
         
         cells_sorted_models.append(tuple([cellcoordlist_sort_rhs, 
-                                         "RHS-avg".format(i)]))
+                                         "RHS-avg"]))
     
     
     
@@ -594,12 +738,32 @@ for exp_index, start_test in enumerate(start_test_list):
     
     
     if plot_phs:
-        cellcoordlist_sort_phs = runPhsModel(points_crime_region_train, 
-                                             masked_grid_region, 
-                                             time_unit, 
-                                             dist_unit)
         
-        pass
+        time_unit = np.timedelta64(1, "W")
+        time_bandwidth = np.timedelta64(4, "W")
+        
+        dist_unit = 100
+        dist_bandwidth = 500
+        
+        
+        
+        cellcoordlist_sort_phs = runPhsModel(
+                training_data = points_crime_region_train, 
+                grid = masked_grid_region, 
+                time_unit = time_unit, 
+                dist_unit = dist_unit, 
+                time_bandwidth = time_bandwidth, 
+                dist_bandwidth = dist_bandwidth, 
+                epsilon = 0.1)
+        
+        cells_sorted_models.append(tuple([cellcoordlist_sort_phs, 
+                                          "PHS_d{}-{}_t{}-{}".format(
+                                                  dist_unit, 
+                                                  dist_bandwidth, 
+                                                  int(time_unit/_day), 
+                                                  int(time_bandwidth/_day) )]))
+        
+        
     
     
     
@@ -636,11 +800,13 @@ print("Max experiment time: {}".format(exp_times_sorted[-1]))
 
 
 
-sys.exit(0)
+#sys.exit(0)
 
 
 
 if False:
+    # Printing some bits of results, just to check what they look like
+    #  and what data types they are
     print(len(all_exp_results))
     for i, exp in enumerate(all_exp_results):
         print(i)
