@@ -13,6 +13,7 @@ import matplotlib
 import descartes
 from itertools import product
 from collections import Counter
+import csv
 import random
 import time
 
@@ -295,7 +296,7 @@ def all_knox_ratios(result):
 
 
 
-def runPhsModel(training_data, grid, time_unit, dist_unit, time_bandwidth, dist_bandwidth, weight="linear",  epsilon=0.1):
+def runPhsModel(training_data, grid, time_unit, dist_unit, time_bandwidth, dist_bandwidth, weight="linear"):
     
     
     
@@ -313,7 +314,7 @@ def runPhsModel(training_data, grid, time_unit, dist_unit, time_bandwidth, dist_
     if weight=="linear":
         phs_predictor.weight = phs.LinearWeightNormalised(space_bandwidth=dist_band_in_units, time_bandwidth=time_band_in_units)
     elif weight=="classic":
-        phs_predictor.weight = phs.ClassicWeightNormalised(space_bandwidth=dist_band_in_units, time_bandwidth=time_band_in_units, epsilon=epsilon)
+        phs_predictor.weight = phs.ClassicWeightNormalised(space_bandwidth=dist_band_in_units, time_bandwidth=time_band_in_units)
     
     phs_predictor.time_unit = time_unit
     phs_predictor.grid = dist_unit
@@ -415,7 +416,7 @@ def runModelAndSortCells(model_name, model_args):
         #   rhs_bandwidth
         #   rhs_random_seed
         
-        rhs_bandwidth, rhs_random_seed = other_model_args
+        rhs_random_seed, rhs_bandwidth = other_model_args
         
         return runRhsModel(points_crime_region_train,
                                                    masked_grid_region, 
@@ -426,41 +427,13 @@ def runModelAndSortCells(model_name, model_args):
         # We need these variables:
         #   points_crime_region_train
         #   masked_grid_region
-        #   time_unit
-        #   time_bandwidth
-        #   dist_unit
-        #   dist_bandwidth
-        #   epsilon # or option to choose Linear vs Classic?
+        #   time_unit ex: np.timedelta64(1, "W")
+        #   time_bandwidth ex: np.timedelta64(4, "W")
+        #   dist_unit ex: 100
+        #   dist_bandwidth ex: 500
+        #   weight ex: "linear", "classic"
         
-        if len(other_model_args)==5:
-            time_unit, time_bandwidth, dist_unit, dist_bandwidth, weight = other_model_args
-            return runPhsModel(
-                    training_data = points_crime_region_train, 
-                    grid = masked_grid_region, 
-                    time_unit = time_unit, 
-                    dist_unit = dist_unit, 
-                    time_bandwidth = time_bandwidth, 
-                    dist_bandwidth = dist_bandwidth, 
-                    weight = weight)
-        elif len(other_model_args)==6:
-            time_unit, time_bandwidth, dist_unit, dist_bandwidth, weight, epsilon = other_model_args
-            return runPhsModel(
-                    training_data = points_crime_region_train, 
-                    grid = masked_grid_region, 
-                    time_unit = time_unit, 
-                    dist_unit = dist_unit, 
-                    time_bandwidth = time_bandwidth, 
-                    dist_bandwidth = dist_bandwidth, 
-                    weight = weight, 
-                    epsilon = epsilon)
-        
-        #time_unit = np.timedelta64(1, "W")
-        #time_bandwidth = np.timedelta64(4, "W")
-        #dist_unit = 100
-        #dist_bandwidth = 500
-        #epsilon = 0.1
-        
-        
+        time_unit, time_bandwidth, dist_unit, dist_bandwidth, weight = other_model_args
         return runPhsModel(
                 training_data = points_crime_region_train, 
                 grid = masked_grid_region, 
@@ -468,7 +441,8 @@ def runModelAndSortCells(model_name, model_args):
                 dist_unit = dist_unit, 
                 time_bandwidth = time_bandwidth, 
                 dist_bandwidth = dist_bandwidth, 
-                epsilon = epsilon)
+                weight = weight)
+        
         
         
         
@@ -522,45 +496,9 @@ init_start_time = time.time()
 #   - dist_unit (==cell width, probably?)
 #   - time_bandwidth
 #   - dist_bandwidth
-#   - choice of weight? (linear vs classic, plus epsilon if classic)
+#   - choice of weight? (linear vs classic)
 #   - knox stuff? (some relates to the above)
 #   - 
-
-
-models_to_run = ["random", "naivecount", "rhs", "phs", "ideal"]
-
-model_param_dict = dict()
-
-model_param_dict["ideal"] = []
-
-model_param_dict["naivecount"] = []
-
-num_random = 1
-rand_seeds = range(num_random)
-model_param_dict["random"] = product(rand_seeds)
-
-num_rhs = 1
-rhs_seeds = range(num_rhs)
-rhs_bandwidth_sweep = [300]
-model_param_dict["rhs"] = product(rhs_bandwidth_sweep, rhs_seeds)
-
-phs_time_units = [np.timedelta64(1, "W")]
-phs_time_bands = [np.timedelta64(4, "W")]
-phs_dist_units = [100]
-phs_dist_bands = [500]
-phs_weights = ["linear"]
-phs_epsilons = [0.1]
-model_param_dict["phs"] = product(
-                            phs_time_units, 
-                            phs_time_bands, 
-                            phs_dist_units, 
-                            phs_dist_bands, 
-                            phs_weights, 
-                            phs_epsilons, 
-                            )
-
-
-
 
 
 # What do I want to see in output?
@@ -581,7 +519,44 @@ model_param_dict["phs"] = product(
 # (various model-specific parameters: random seeds, bandwidths, etc, etc)
 
 
+
+
+models_to_run = ["random", "naivecount", "rhs", "phs", "ideal"]
+
+model_param_dict = dict()
+
+model_param_dict["ideal"] = [()]
+
+model_param_dict["naivecount"] = [()]
+
+num_random = 1
+rand_seeds = range(num_random)
+model_param_dict["random"] = list(product(rand_seeds))
+
+num_rhs = 1
+rhs_seeds = range(num_rhs)
+rhs_bandwidth_sweep = [300]
+model_param_dict["rhs"] = list(product(rhs_seeds, rhs_bandwidth_sweep))
+
+phs_time_units = [np.timedelta64(1, "W")]
+phs_time_bands = [np.timedelta64(4, "W")]
+phs_dist_units = [100]
+phs_dist_bands = [500]
+phs_weights = ["linear"]
+model_param_dict["phs"] = list(product(
+                            phs_time_units, 
+                            phs_time_bands, 
+                            phs_dist_units, 
+                            phs_dist_bands, 
+                            phs_weights))
+
+
+
+
+
+
 # Parameters for overall data set
+dataset_name = "Chicago"
 crime_type_set_sweep = [{"BURGLARY"}]
 cell_width_sweep = [250]
 # If we did spatial offsets, that would belong here too
@@ -622,7 +597,9 @@ cell_height = cell_width
 
 # Time parameters
 earliest_test_date = "2018-01-01"
-latest_test_date = "2018-02-01"
+test_date_range = "1M"
+#latest_test_date = "2018-02-01"
+latest_test_date = generateLaterDate(earliest_test_date, test_date_range)
 test_date_step = "1D"
 start_test_list = generateDateRange(earliest_test_date, latest_test_date, test_date_step)
 train_len = "4W"
@@ -630,7 +607,7 @@ test_len = "1D"
 total_num_exp_dates = len(start_test_list)
 
 
-
+coverage_rate_sweep = [0.01, 0.02, 0.05, 0.10]
 
 # Choice of models to plot
 #plot_expected_random = False
@@ -661,6 +638,26 @@ cell_sampling = 15 #!!! need to find where to use this
 
 
 
+result_info_header = [
+                                "dataset", 
+                                "crime_types",
+                                "cell_width", 
+                                "eval_date", 
+                                "train_len", 
+                                "test_len", 
+                                "coverage_rate", 
+                                "test_crimes", 
+                                "hit_count", 
+                                "hit_pct", 
+                                "model", 
+                                "rand_seed", 
+                                "rhs_bandwidth", 
+                                "phs_time_unit", 
+                                "phs_time_band", 
+                                "phs_dist_unit", 
+                                "phs_dist_band", 
+                                "phs_weight", 
+                                ]
 
 
 
@@ -669,326 +666,218 @@ cell_sampling = 15 #!!! need to find where to use this
 print("...declared parameters.")
 
 
+# Create csv file
+#csv_fname = "test190513.csv"
+csv_fname = "results_{}_{}_{}_{}.csv".format(dataset_name, earliest_test_date, test_date_range, test_date_step)
 
 
 
-
-# PARAM:crime type
-for crime_type_set in crime_type_set_sweep:
-    
-    ### OBTAIN FULL DATA
-    print("Obtaining full data set and region...")
-    obtain_data_start_time = time.time()
-    points_crime = chicago.load(chicago_file_path, crime_type_set, 
-                                type=chicago_load_type)
-    
-    
-    ### OBTAIN GRIDDED REGION
-    
-    # Obtain polygon shapely object for region of interest
-    region_polygon = chicago.get_side(chicago_side)
-    
-    # Obtain data set within relevant region
-    points_crime_region = open_cp.geometry.intersect_timed_points(points_crime, 
-                                                                  region_polygon)
-    
-    
-    obtain_data_end_time = time.time()
-    print("...obtained full data set and region.")
-    print("Time: {}".format(obtain_data_end_time - obtain_data_start_time))
+with open(csv_fname, "w") as csvf:
+    writer = csv.writer(csvf, delimiter=",", lineterminator="\n")
+    writer.writerow(result_info_header)
     
     
     
     
-    # PARAM:cell width
-    for cell_width in cell_width_sweep:
+    # PARAM:crime type
+    for crime_type_set in crime_type_set_sweep:
+        
+        crime_types_printable = "_".join(sorted(crime_type_set))
+        
+        ### OBTAIN FULL DATA
+        print("Obtaining full data set and region...")
+        obtain_data_start_time = time.time()
+        points_crime = chicago.load(chicago_file_path, crime_type_set, 
+                                    type=chicago_load_type)
         
         
-        print("Obtaining grid for region...")
-        obtain_reg_start_time = time.time()
+        ### OBTAIN GRIDDED REGION
         
-        # Obtain grid with cells only overlaid on relevant region
-        masked_grid_region = open_cp.geometry.mask_grid_by_intersection(region_polygon, open_cp.data.Grid(xsize=cell_width, ysize=cell_height, xoffset=0, yoffset=0))
+        # Obtain polygon shapely object for region of interest
+        region_polygon = chicago.get_side(chicago_side)
         
-        # Get a list/tuple of all cellcoords in the region
-        cellcoordlist_region = getRegionCells(masked_grid_region)
-        
-        # Obtain number of cells in the grid that contain relevant geometry
-        # (i.e., not the full rectangular grid, only relevant cells)
-        num_cells_region = len(cellcoordlist_region)
-        
-        obtain_reg_end_time = time.time()
-        print("...obtained grid for region.")
-        print("Time: {}".format(obtain_reg_end_time - obtain_reg_start_time))
+        # Obtain data set within relevant region
+        points_crime_region = open_cp.geometry.intersect_timed_points(points_crime, 
+                                                                      region_polygon)
         
         
-        
-        
-        all_exp_results = []
-        test_data_counts = []
-        test_data_dates = []
-        exp_times = []
+        obtain_data_end_time = time.time()
+        print("...obtained full data set and region.")
+        print("Time: {}".format(obtain_data_end_time - obtain_data_start_time))
         
         
         
-        # PARAM: Start date
-        for exp_date_index, start_test in enumerate(start_test_list):
-            
-            exp_start_time = time.time()
-            
-            if exp_date_index % 5 == 0:
-                print("Running experiment {}/{}...".format(exp_date_index, total_num_exp_dates))
-            
-            # Declare time ranges of training and testing data
-            end_train = start_test
-            start_train = generateEarlierDate(end_train, train_len)
-            end_test = generateLaterDate(start_test, test_len)
-            #print(start_train, end_train, start_test, end_test)
+        
+        # PARAM:cell width
+        for cell_width in cell_width_sweep:
             
             
+            print("Obtaining grid for region...")
+            obtain_reg_start_time = time.time()
             
+            # Obtain grid with cells only overlaid on relevant region
+            masked_grid_region = open_cp.geometry.mask_grid_by_intersection(region_polygon, open_cp.data.Grid(xsize=cell_width, ysize=cell_height, xoffset=0, yoffset=0))
             
-            ### SELECT TRAINING DATA
+            # Get a list/tuple of all cellcoords in the region
+            cellcoordlist_region = getRegionCells(masked_grid_region)
             
-            # Get subset of data for training
-            points_crime_region_train = getTimedPointsInTimeRange(points_crime_region, 
-                                                                  start_train, 
-                                                                  end_train)
+            # Obtain number of cells in the grid that contain relevant geometry
+            # (i.e., not the full rectangular grid, only relevant cells)
+            num_cells_region = len(cellcoordlist_region)
+            coverage_cell_index_map = dict([(c, int(num_cells_region * c)-1) for c in coverage_rate_sweep])
             
-            #print(len(points_crime_region_train.timestamps))
-            
-            
-            ### TESTING DATA, USED FOR EVALUATION
-            # (Also used for Ideal model, which is why we create it here)
-            
-            # Obtain selection of data for testing
-            points_crime_region_test = getTimedPointsInTimeRange(points_crime_region, 
-                                                                  start_test, 
-                                                                  end_test)
-            # Count how many crimes there were in this test data set
-            num_crimes_test = len(points_crime_region_test.timestamps)
-            #print(num_crimes_test)
-            
-            # Count the number of crimes per cell
-            cells_testcrime_ctr = countPointsPerCell(points_crime_region_test, 
-                                                     masked_grid_region)
-            
-            
-            test_data_counts.append(num_crimes_test)
+            obtain_reg_end_time = time.time()
+            print("...obtained grid for region.")
+            print("Time: {}".format(obtain_reg_end_time - obtain_reg_start_time))
             
             
             
             
+            all_exp_results = []
+            test_data_counts = []
+            test_data_dates = []
+            exp_times = []
             
             
             
-            
-            
-            # Instantiate the list of sorted lists of cells based on different models
-            cells_sorted_models = []
-            
-            
-            
-            
-            # PARAM: model
-            
-            for model_name in models_to_run:
+            # PARAM: Start date
+            for exp_date_index, start_test in enumerate(start_test_list):
                 
-                args_to_use = []
-                if model_name in ["ideal", "random"]:
-                    args_to_use.append(cellcoordlist_region)
-                    if model_name == "ideal":
-                        args_to_use.append(cells_testcrime_ctr)
-                elif model_name in ["naivecount", "rhs", "phs"]:
-                    args_to_use.append(points_crime_region_train)
-                    args_to_use.append(masked_grid_region)
+                exp_start_time = time.time()
+                
+                if exp_date_index % 5 == 0:
+                    print("Running experiment {}/{}...".format(exp_date_index, total_num_exp_dates))
+                
+                # Declare time ranges of training and testing data
+                end_train = start_test
+                start_train = generateEarlierDate(end_train, train_len)
+                end_test = generateLaterDate(start_test, test_len)
+                #print(start_train, end_train, start_test, end_test)
                 
                 
-                # PARAM: param sweep for specific model
                 
-                for param_combo_index, param_combo in enumerate(model_param_dict[model_name]):
+                
+                ### SELECT TRAINING DATA
+                
+                # Get subset of data for training
+                points_crime_region_train = getTimedPointsInTimeRange(points_crime_region, 
+                                                                      start_train, 
+                                                                      end_train)
+                
+                #print(len(points_crime_region_train.timestamps))
+                
+                
+                ### TESTING DATA, USED FOR EVALUATION
+                # (Also used for Ideal model, which is why we create it here)
+                
+                # Obtain selection of data for testing
+                points_crime_region_test = getTimedPointsInTimeRange(points_crime_region, 
+                                                                      start_test, 
+                                                                      end_test)
+                # Count how many crimes there were in this test data set
+                num_crimes_test = len(points_crime_region_test.timestamps)
+                #print(num_crimes_test)
+                
+                # Count the number of crimes per cell
+                cells_testcrime_ctr = countPointsPerCell(points_crime_region_test, 
+                                                         masked_grid_region)
+                
+                
+                test_data_counts.append(num_crimes_test)
+                
+                
+                
+                
+                
+                
+                
+                
+                
+                # Instantiate the list of sorted lists of cells based on different models
+                cells_sorted_models = []
+                
+                hit_rates_for_models = []
+                
+                
+                
+                # PARAM: model
+                
+                for model_name in models_to_run:
                     
-                    sorted_cells = runModelAndSortCells(model_name, args_to_use + list(param_combo))
+                    args_to_use = []
+                    if model_name in ["ideal", "random"]:
+                        args_to_use.append(cellcoordlist_region)
+                        if model_name == "ideal":
+                            args_to_use.append(cells_testcrime_ctr)
+                    elif model_name in ["naivecount", "rhs", "phs"]:
+                        args_to_use.append(points_crime_region_train)
+                        args_to_use.append(masked_grid_region)
                     
                     
-                    # !!! I want to replace this line with something better
-                    cells_sorted_models.append(tuple([sorted_cells, model_name + str(param_combo_index)]))
+                    # PARAM: param sweep for specific model
                     
-                    
+                    for param_combo_index, param_combo in enumerate(model_param_dict[model_name]):
+                        
+                        sorted_cells = runModelAndSortCells(model_name, args_to_use + list(param_combo))
+                        
+                        hit_rate_list = getHitRateList(sorted_cells, cells_testcrime_ctr)
+                        
+                        
+                        # PARAM: coverage
+                        
+                        for coverage_rate in coverage_rate_sweep:
+                            
+                            num_hits = hit_rate_list[coverage_cell_index_map[coverage_rate]]
+                            pct_hits = 0
+                            if num_crimes_test>0:
+                                pct_hits = num_hits / num_crimes_test
+                            
+                            
+                            
+                            result_info = [
+                                    dataset_name, 
+                                    crime_types_printable, 
+                                    cell_width, 
+                                    start_test, 
+                                    train_len, 
+                                    test_len, 
+                                    coverage_rate, 
+                                    num_crimes_test, 
+                                    num_hits, 
+                                    pct_hits, 
+                                    model_name]
+                            
+                            if model_name == "phs":
+                                result_info += ["",""]
+                            
+                            result_info += list(param_combo)
+                            
+                            while len(result_info)<18:
+                                result_info.append("")
+                            
+                            writer.writerow(result_info)
+                            print("Wrote results for exp {} model {}".format(exp_date_index, model_name))
+                            
                 
                 
-                
-                
-                
-                
-                
-                
-                
-                
-                
-                
-                
-                
-                
-                
-                
-                
-                
-                
-                
+                exp_times.append(time.time() - exp_start_time)
             
             
-            
-            ### IDEAL MODEL, CHEAT BY LOOKING AT TEST DATA AND CHOOSING BEST CELLS
-            # Sort cellcoords by crimes in test data, most crimes first
-            # This is the best possible order a model could choose, aka "oracle"
-            if plot_ideal:
-                cellcoordlist_sort_test = sorted(cellcoordlist_region, 
-                                                 key=lambda x:cells_testcrime_ctr[x], 
-                                                 reverse=True)
-                cells_sorted_models.append((cellcoordlist_sort_test, "Ideal"))
-            
-            
-            
-            
-            ### UNINTELLIGENT MODEL, JUST SORT CELLS COMPLETELY RANDOMLY
-            if plot_random:
-                cells_sorted_models.append(tuple( \
-                    [RandomlySortCells(cellcoordlist_region, seed=plot_random_seed), 
-                     "Random"] ))
-            
-            
-            ### MOST BASIC MODEL, JUST COUNT CRIMES IN TRAINING DATA
-            if plot_naive_count:
-                cellcoordlist_sort_naive = runNaiveCount_model(points_crime_region_train,
-                                                               masked_grid_region)
-                cells_sorted_models.append(tuple([cellcoordlist_sort_naive, 
-                                                  "NaiveCount"]))
-            
-            
-            
-            
-            
-            
-            
-            ### CREATE RHS MODEL, RANK CELLS
-            
-            
-            if plot_rhs:
-                if rhs_num==None or rhs_num<1:
-                    rhs_num = 1
-                for i in range(rhs_num):
-                    
-                    cellcoordlist_sort_rhs = runRhsModel(points_crime_region_train,
-                                                           masked_grid_region, 
-                                                           #bandwidth = (i+1)*rhs_band_step, 
-                                                           bandwidth = rhs_bandwidth, 
-                                                           rand_seed=i)
-                    
-                    cells_sorted_models.append(tuple([cellcoordlist_sort_rhs, 
-                                                     "RHS-seed{}".format(i)]))
-            
-            if plot_rhs_avg:
-                
-                cellcoordlist_sort_rhs = averageRhsModels(points_crime_region_train,
-                                                       masked_grid_region, 
-                                                       #bandwidth = (i+1)*rhs_band_step, 
-                                                       bandwidth = rhs_bandwidth, 
-                                                       num_runs = rhs_num)
-                
-                cells_sorted_models.append(tuple([cellcoordlist_sort_rhs, 
-                                                 "RHS-avg"]))
-            
-            
-            
-            ### CREATE PHS MODEL AROUND HERE
-            
-            
-            if plot_phs:
-                
-                time_unit = np.timedelta64(1, "W")
-                time_bandwidth = np.timedelta64(4, "W")
-                
-                dist_unit = 100
-                dist_bandwidth = 500
-                
-                
-                
-                cellcoordlist_sort_phs = runPhsModel(
-                        training_data = points_crime_region_train, 
-                        grid = masked_grid_region, 
-                        time_unit = time_unit, 
-                        dist_unit = dist_unit, 
-                        time_bandwidth = time_bandwidth, 
-                        dist_bandwidth = dist_bandwidth, 
-                        epsilon = 0.1)
-                
-                cells_sorted_models.append(tuple([cellcoordlist_sort_phs, 
-                                                  "PHS_d{}-{}_t{}-{}".format(
-                                                          dist_unit, 
-                                                          dist_bandwidth, 
-                                                          int(time_unit/_day), 
-                                                          int(time_bandwidth/_day) )]))
-                
-                
-            
-            
-            
-            
-            
-            
-            
-            
-            
-            
-            # NOTE
-            # This eval bit is at the end of this for-loop:
-            # for exp_date_index, start_test in enumerate(start_test_list):
-            
-            # Get hit rates based on cell sorts
-            hit_rates_for_models = []
-            for (cells_sorted, model_name) in cells_sorted_models:
-                hit_rates_for_models.append( \
-                    [getHitRateList(cells_sorted, cells_testcrime_ctr), model_name] )
-            
-            # Save off hit rate results
-            all_exp_results.append(hit_rates_for_models)
-            
-            exp_times.append(time.time() - exp_start_time)
-            
-            
-
-exp_times_sorted = sorted(exp_times)
-exp_times_total = sum(exp_times)
-print("Total experiment time: {}".format(exp_times_total))
-print("Average experiment time: {}".format(exp_times_total/len(exp_times)))
-print("Min experiment time: {}".format(exp_times_sorted[0]))
-print("Max experiment time: {}".format(exp_times_sorted[-1]))
-
-
-
-#sys.exit(0)
-
-
-
-if False:
-    # Printing some bits of results, just to check what they look like
-    #  and what data types they are
-    print(len(all_exp_results))
-    for i, exp in enumerate(all_exp_results):
-        print(i)
-        print(len(exp))
-        for model_result in exp:
-            print(model_result[1])
-            print(len(model_result[0]))
-            print(model_result[0][:20])
-            print(np.array(model_result[0][:20])/test_data_counts[i])
-        print("---")
+            exp_times_sorted = sorted(exp_times)
+            exp_times_total = sum(exp_times)
+            print("Total experiment time: {}".format(exp_times_total))
+            print("Average experiment time: {}".format(exp_times_total/len(exp_times)))
+            print("Min experiment time: {}".format(exp_times_sorted[0]))
+            print("Max experiment time: {}".format(exp_times_sorted[-1]))
 
 
 
 
 
+
+
+
+sys.exit(0)
 
 
 ### DECLARE FIGURE FOR HITRATE/COVERAGE
@@ -1090,13 +979,6 @@ coverage_xcoords = np.asarray(range(num_cells_region))/num_cells_region
 
 
 
-if plot_expected_random:
-    ax.plot(coverage_xcoords, coverage_xcoords)
-    names_for_legend.append("Expected random")
-
-
-#cells_sorted_models = [cellcoordlist_sort_test, cellcoordlist_sort_rhs, cellcoordlist_sort_rand, cellcoordlist_sort_naive]
-#cells_sorted_models = [cellcoordlist_sort_naive, *rhs_sorts]
 
 for (cells_sorted, model_name) in cells_sorted_models:
     hit_rates = getHitRateList(cells_sorted, cells_testcrime_ctr)

@@ -85,19 +85,17 @@ class ClassicWeightNormalised(Weight):
     
     
     
-    def __init__(self, space_bandwidth=8, time_bandwidth=8, epsilon = 0.1):
+    def __init__(self, space_bandwidth=8, time_bandwidth=8):
         self.space_bandwidth = space_bandwidth
         self.time_bandwidth = time_bandwidth
-        self.epsilon = epsilon
-        self.eps_factor = (1-self.epsilon)/(self.epsilon)
 
     def __call__(self, dt, dd):
         mask = (dt < self.time_bandwidth) & (dd < self.space_bandwidth)
         
-        dt_norm = dt * (1/self.time_bandwidth) * (self.eps_factor)
-        dd_norm = dd * (1/self.space_bandwidth) * (self.eps_factor)
+        dt_norm = (dt/self.time_bandwidth)
+        dd_norm = (dd/self.space_bandwidth)
         
-        return mask * 1 / ( (1 + dd_norm) * ( 1 + dt_norm) )
+        return mask * ((2/(1+dt_norm))-1) * ((2/(1+dd_norm))-1)
 
     def __repr__(self):
         return "ClassicNorm(sb={}, tb={}, e={})".format(self.space_bandwidth, self.time_bandwidth, self.epsilon)
