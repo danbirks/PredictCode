@@ -310,7 +310,8 @@ def runPhsModel(training_data, grid, time_unit, dist_unit, time_bandwidth, dist_
     dist_band_in_units = dist_bandwidth/dist_unit
     time_band_in_units = time_bandwidth/time_unit
     
-    phs_predictor.weight = phs.ClassicWeightNormalised(space_bandwidth=dist_band_in_units, time_bandwidth=time_band_in_units, epsilon=epsilon)
+    phs_predictor.weight = phs.ClassicWeightNormalised(space_bandwidth=dist_band_in_units, time_bandwidth=time_band_in_units)
+    #phs_predictor.weight = phs.ClassicWeightNormalised(space_bandwidth=dist_band_in_units, time_bandwidth=time_band_in_units, epsilon=epsilon)
     
     phs_predictor.time_unit = time_unit
     phs_predictor.grid = dist_unit
@@ -508,7 +509,7 @@ plot_random = True
 plot_naive_count = True
 plot_rhs = True
 plot_rhs_avg = False
-rhs_num = 4
+rhs_num = 1
 rhs_band_step = cell_width
 plot_phs = True
 
@@ -636,7 +637,7 @@ for exp_index, start_test in enumerate(start_test_list):
     sd = sorted(training_data.timestamps)
     print(sd[0])
     print(sd[-1])
-    sys.exit(0)
+    #sys.exit(0)
     
     
     
@@ -800,7 +801,6 @@ print("Max experiment time: {}".format(exp_times_sorted[-1]))
 
 
 
-#sys.exit(0)
 
 
 
@@ -831,10 +831,12 @@ if False:
 
 results_count_offset = .025
 results_rate_offset = .005
+results_count_offset = 0
+results_rate_offset = 0
 
 # Declare figure
 print("Declaring figure...")
-fig, ax = plt.subplots(figsize=(12,8))
+fig, ax = plt.subplots(figsize=(12,6))
 
 
 names_for_legend = []
@@ -859,7 +861,7 @@ for row_num, row in enumerate(result_matrix):
     names_for_legend.append(all_exp_results[0][row_num][1])
 
 
-ax.legend(names_for_legend)
+#ax.legend(names_for_legend)
 ax.tick_params(axis='x', rotation=90)
 
 
@@ -869,7 +871,7 @@ ax.tick_params(axis='x', rotation=90)
 
 # Declare figure
 print("Declaring figure...")
-fig, ax = plt.subplots(figsize=(12,8))
+fig, ax = plt.subplots(figsize=(12,6))
 
 
 names_for_legend = []
@@ -896,7 +898,7 @@ for row_num, row in enumerate(result_matrix):
     names_for_legend.append(all_exp_results[0][row_num][1])
 
 
-ax.legend(names_for_legend)
+#ax.legend(names_for_legend)
 ax.tick_params(axis='x', rotation=90)
 
 
