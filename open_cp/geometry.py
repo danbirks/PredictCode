@@ -182,6 +182,14 @@ def intersect_timed_points(timed_points, geo):
     points = [ (x,y) for x,y in zip(timed_points.xcoords, timed_points.ycoords) ]
     mp = _geometry.MultiPoint(points)
     mp = mp.intersection(geo)
+    print(f"type of mp: {type(mp)}")
+    print(f"type of np-asarray-mp: {type(_np.asarray(mp))}")
+    print(f"shape of np-asarray-mp: {_np.asarray(mp).shape}")
+    for pt in _np.asarray(mp):
+        print(f"type of pt: {type(pt)}")
+        if type(pt)==_np.ndarray:
+            print(f"shape of pt: {pt.shape}")
+        break
     points_we_want = set(tuple(pt) for pt in _np.asarray(mp))
     mask = [pt in points_we_want for pt in points]
     mask = _np.array(mask, dtype=_np.bool)

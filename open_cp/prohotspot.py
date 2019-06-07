@@ -119,6 +119,10 @@ class LinearWeightNormalised(Weight):
     def __init__(self, space_bandwidth=8, time_bandwidth=8, epsilon = 0.1):
         self.space_bandwidth = space_bandwidth
         self.time_bandwidth = time_bandwidth
+        print(f"space_bandwidth is: {space_bandwidth}")
+        print(f"time_bandwidth is: {time_bandwidth}")
+        print(f"type of space_bandwidth is: {type(space_bandwidth)}")
+        print(f"type of time_bandwidth is: {type(time_bandwidth)}")
 
     def __call__(self, dt, dd):
         mask = (dt < self.time_bandwidth) & (dd < self.space_bandwidth)

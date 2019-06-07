@@ -16,7 +16,6 @@ import descartes
 from itertools import product
 from collections import Counter
 import datetime
-import csv
 import random
 import time
 
@@ -55,6 +54,7 @@ from crimeRiskTimeTools import generateDateRange, \
                                generateLaterDate, \
                                generateEarlierDate, \
                                getTimedPointsInTimeRange, \
+                               getSixDigitDate, \
                                _day
 
 # Useful line for python console
@@ -223,34 +223,55 @@ def runPhsModel(training_data, grid, time_unit, dist_unit, time_bandwidth, dist_
     
     
     grid_cells = getRegionCells(grid=grid)
+    print(f"Type of grid_cells: {type(grid_cells)}")
+    print(f"Type of element of grid_cells: {type(grid_cells[0])}")
+    print(f"Length of grid_cells: {len(grid_cells)}")
     
     # Obtain model and prediction on grid cells
     phs_predictor = phs.ProspectiveHotSpot(grid=grid)
     phs_predictor.data = training_data
+    print(f"Type of phs_predictor: {type(phs_predictor)}")
     
     dist_band_in_units = dist_bandwidth/dist_unit
     time_band_in_units = time_bandwidth/time_unit
+    print(f"dist_band_in_units: {dist_band_in_units}")
+    print(f"time_band_in_units: {time_band_in_units}")
+    
+    print(f"time_bandwidth: {str(time_bandwidth)}")
+    print(f"time_unit: {str(time_unit)}")
     
     if weight=="linear":
         phs_predictor.weight = phs.LinearWeightNormalised(space_bandwidth=dist_band_in_units, time_bandwidth=time_band_in_units)
     elif weight=="classic":
         phs_predictor.weight = phs.ClassicWeightNormalised(space_bandwidth=dist_band_in_units, time_bandwidth=time_band_in_units)
     
-    phs_predictor.time_unit = time_unit
     phs_predictor.grid = dist_unit
+    phs_predictor.time_unit = time_unit
+    print(f"dist_unit: {dist_unit}")
+    print(f"time_unit: {str(time_unit)}")
+    
     
     cutoff_time = sorted(training_data.timestamps)[-1] + _day
     
     phs_grid_risk = phs_predictor.predict(cutoff_time, cutoff_time)
+    print(f"Type of phs_grid_risk: {type(phs_grid_risk)}")
     
     
     
     #phs_grid_risk = open_cp.predictors.grid_prediction(phs_risk, grid)
     phs_grid_risk_matrix = phs_grid_risk.intensity_matrix
-    print(type(phs_grid_risk))
-    print(type(phs_grid_risk_matrix))
+    print(f"Type of phs_grid_risk_matrix: {type(phs_grid_risk_matrix)}")
     print(phs_grid_risk_matrix)
-    print(phs_grid_risk_matrix.shape)
+    print(f"Shape of phs_grid_risk_matrix: {phs_grid_risk_matrix.shape}")
+    print("First 10x10 of phs_grid_risk_matrix:")
+    print(phs_grid_risk_matrix[20:30,20:30])
+    valctr = Counter()
+    for somerow in phs_grid_risk_matrix:
+        valctr.update(somerow)
+    print(valctr)
+    print("First 40 columns:")
+    for somerow in (4*phs_grid_risk_matrix[:,:40]).astype(int).tolist():
+        print(somerow)
     sys.exit(0)
     
     # Sort cellcoords by risk in intensity matrix, highest risk first
@@ -420,9 +441,12 @@ init_start_time = time.time()
 
 
 
+
+
+
 #models_to_run = ["random", "naivecount", "rhs", "phs", "ideal"]
 #models_to_run = ["random", "naivecount", "phs", "ideal"]
-models_to_run = ["naivecount", "phs"]
+models_to_run = ["naivecount","phs"]
 #models_to_run = ["phs"]
 
 model_param_dict = dict()
@@ -443,7 +467,7 @@ model_param_dict["rhs"] = list(product(rhs_seeds, rhs_bandwidth_sweep))
 phs_time_units = [np.timedelta64(1, "W")]
 #phs_time_bands = [np.timedelta64(4, "W")]
 #phs_time_bands = [np.timedelta64(x, "W") for x in range(1,7)]
-phs_time_bands = [np.timedelta64(x, "W") for x in range(1)]
+phs_time_bands = [np.timedelta64(x, "W") for x in range(1,2)]
 phs_dist_units = [100]
 #phs_dist_bands = [500]
 #phs_dist_bands = [x*100 for x in range(1,11)]
@@ -479,7 +503,8 @@ cell_width_sweep = [200]
 # Data parameters
 print("Declaring parameters...")
 datadir = os.path.join("..", "..", "Data")
-chicago_file_name = "chicago_all_old.csv"
+#chicago_file_name = "chicago_all_old.csv"
+chicago_file_name = "chi_all_BURGLARY_160101_180101_5.csv"
 chicago_side = "South"
 chicago_load_type = "snapshot"
 if "all" in chicago_file_name:
@@ -511,7 +536,7 @@ crime_type_set = {"BURGLARY"}
 #  and testing data, regardless of the sizes of those data sets.
 
 # Of all planned experiments, earliest start of a test data set
-earliest_test_date = "2002-01-01"
+earliest_test_date = "2017-01-01"
 earliest_test_date_str = "".join(earliest_test_date.split("-"))[2:]
 # Time between earliest experiment and latest experiment
 test_date_range = "1W"
@@ -584,16 +609,14 @@ result_info_header = [
 
 
 
-
-
 print("...declared parameters.")
 
 
 date_today = datetime.date.today()
-date_today_str = "{:02}{:02}{:02}".format(date_today.year%100, date_today.month, date_today.day)
+date_today_str = getSixDigitDate(date_today)
 
 # Create csv file
-#csv_fname = "test190513.csv"
+#csv_fname = "test190606.csv"
 out_csv_fname = "results_{}_{}_{}_{}_{}.csv".format(date_today_str, dataset_name, earliest_test_date_str, test_date_range, test_date_step)
 out_csv_full_path = os.path.join(datadir, out_csv_fname)
 
@@ -624,8 +647,9 @@ with open(out_csv_full_path, "w") as csvf:
         region_polygon = chicago.get_side(chicago_side)
         
         # Obtain data set within relevant region
-        points_crime_region = open_cp.geometry.intersect_timed_points(points_crime, 
-                                                                      region_polygon)
+        print(f"type of points_crime: {type(points_crime)}")
+        print(f"type of region_polygon: {type(region_polygon)}")
+        points_crime_region = open_cp.geometry.intersect_timed_points(points_crime, region_polygon)
         
         
         obtain_data_end_time = time.time()
