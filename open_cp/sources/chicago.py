@@ -140,11 +140,14 @@ def _get_dic(type):
     except KeyError:
         raise ValueError("Don't understand type {}".format(type))
 
-def _load_to_list(file, dic, primary_description_names):
+def _load_to_list(file, dic, primary_description_names, withcsvrows=False):
     reader = _csv.reader(file)
-    lookup = _convert_header(next(reader), dic)
+    firstline = next(reader)
+    lookup = _convert_header(firstline, dic)
     dt_convert = dic["DT_CONVERT"]
     data = []
+    if withcsvrows:
+        data.append(firstline)
     for row in reader:
         description = row[lookup[dic["_DESCRIPTION_FIELD"]]].strip()
         if not description in primary_description_names:
@@ -153,10 +156,13 @@ def _load_to_list(file, dic, primary_description_names):
         y = row[lookup[dic["_Y_FIELD"]]].strip()
         t = row[lookup[dic["_TIME_FIELD"]]].strip()
         if x != "" and y != "":
-            data.append((dt_convert(t), float(x), float(y)))
+            if withcsvrows:
+                data.append((dt_convert(t), float(x), float(y), row))
+            else:
+                data.append((dt_convert(t), float(x), float(y)))
     return data
 
-def load(file, primary_description_names, to_meters=True, type="snapshot"):
+def load(file, primary_description_names, to_meters=True, type="snapshot", withcsvrows=False):
     """Load data from a CSV file in the expected format.
 
     :param file: Name of the CSV file load, or a file-like object.
@@ -173,20 +179,28 @@ def load(file, primary_description_names, to_meters=True, type="snapshot"):
 
     if isinstance(file, str):
         with open(file) as file:
-            data = _load_to_list(file, dic, primary_description_names)
+            data = _load_to_list(file, dic, primary_description_names, withcsvrows=withcsvrows)
     else:
-        data = _load_to_list(file, dic, primary_description_names)
+        data = _load_to_list(file, dic, primary_description_names, withcsvrows=withcsvrows)
 
+    firstcsvrow = None
+    if withcsvrows:
+        firstcsvrow = data[0]
+        data = data[1:]
     data.sort(key = lambda triple : triple[0])
     xcoords = _np.empty(len(data))
     ycoords = _np.empty(len(data))
-    for i, (_, x, y) in enumerate(data):
-        xcoords[i], ycoords[i] = x, y
-    times = [t for t, _, _ in data]
+    for i, triple in enumerate(data):
+        xcoords[i], ycoords[i] = triple[1], triple[2]
+    times = [triple[0] for triple in data]
     if to_meters:
         xcoords /= _FEET_IN_METERS
         ycoords /= _FEET_IN_METERS
-    return TimedPoints.from_coords(times, xcoords, ycoords)
+    timedpoints = TimedPoints.from_coords(times, xcoords, ycoords)
+    if withcsvrows:
+        return timedpoints, [t[3] for t in data], firstcsvrow
+    else:
+        return timedpoints
 
 def _convert_header_for_geojson(header, dic):
     try:

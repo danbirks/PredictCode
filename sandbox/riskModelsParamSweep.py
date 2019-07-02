@@ -16,7 +16,6 @@ import descartes
 from itertools import product
 from collections import Counter
 import datetime
-import csv
 import random
 import time
 
@@ -55,6 +54,7 @@ from crimeRiskTimeTools import generateDateRange, \
                                generateLaterDate, \
                                generateEarlierDate, \
                                getTimedPointsInTimeRange, \
+                               getSixDigitDate, \
                                _day
 
 # Useful line for python console
@@ -262,11 +262,7 @@ def all_knox_ratios(result):
 
 
 
-def runPhsModel(training_data, grid, time_unit, dist_unit, time_bandwidth, dist_bandwidth, weight="linear"):
-    
-    
-    
-    
+def runPhsModel(training_data, grid, cutoff_time, time_unit, dist_unit, time_bandwidth, dist_bandwidth, weight="linear"):
     
     grid_cells = getRegionCells(grid=grid)
     
@@ -282,14 +278,16 @@ def runPhsModel(training_data, grid, time_unit, dist_unit, time_bandwidth, dist_
     elif weight=="classic":
         phs_predictor.weight = phs.ClassicWeightNormalised(space_bandwidth=dist_band_in_units, time_bandwidth=time_band_in_units)
     
-    phs_predictor.time_unit = time_unit
     phs_predictor.grid = dist_unit
+    phs_predictor.time_unit = time_unit
     
-    cutoff_time = sorted(training_data.timestamps)[-1] + _day
+    # Only include this method of establishing cutoff_time if we want a
+    #  prediction for the day after the latest event in training data. If so,
+    #  this will ignore any event-less period of time between training and
+    #  test data, which means time decay may be less pronounced.
+    #cutoff_time = sorted(training_data.timestamps)[-1] + _day
     
     phs_grid_risk = phs_predictor.predict(cutoff_time, cutoff_time)
-    
-    
     
     #phs_grid_risk = open_cp.predictors.grid_prediction(phs_risk, grid)
     phs_grid_risk_matrix = phs_grid_risk.intensity_matrix
@@ -380,10 +378,11 @@ def runModelAndSortCells(model_name, model_args):
         #   dist_bandwidth (ex: 500 )
         #   weight (ex: "linear", "classic" )
         
-        time_unit, time_bandwidth, dist_unit, dist_bandwidth, weight = other_model_args
+        cutoff_time, time_unit, time_bandwidth, dist_unit, dist_bandwidth, weight = other_model_args
         return runPhsModel(
                 training_data = points_crime_region_train, 
                 grid = masked_grid_region, 
+                cutoff_time = cutoff_time, 
                 time_unit = time_unit, 
                 dist_unit = dist_unit, 
                 time_bandwidth = time_bandwidth, 
@@ -460,9 +459,10 @@ init_start_time = time.time()
 
 
 
-
 #models_to_run = ["random", "naivecount", "rhs", "phs", "ideal"]
-models_to_run = ["random", "naivecount", "phs", "ideal"]
+#models_to_run = ["random", "naivecount", "phs", "ideal"]
+models_to_run = ["naivecount","phs"]
+#models_to_run = ["phs"]
 
 model_param_dict = dict()
 
@@ -481,10 +481,12 @@ model_param_dict["rhs"] = list(product(rhs_seeds, rhs_bandwidth_sweep))
 
 phs_time_units = [np.timedelta64(1, "W")]
 #phs_time_bands = [np.timedelta64(4, "W")]
-phs_time_bands = [np.timedelta64(x, "W") for x in range(1,7)]
+#phs_time_bands = [np.timedelta64(x, "W") for x in range(1,7)]
+phs_time_bands = [np.timedelta64(x, "W") for x in range(4,5)]
 phs_dist_units = [100]
 #phs_dist_bands = [500]
-phs_dist_bands = [x*100 for x in range(1,11)]
+#phs_dist_bands = [x*100 for x in range(1,11)]
+phs_dist_bands = [x*100 for x in range(4,5)]
 phs_weights = ["linear"]
 model_param_dict["phs"] = list(product(
                             phs_time_units, 
@@ -501,7 +503,7 @@ model_param_dict["phs"] = list(product(
 # Parameters for overall data set
 dataset_name = "Chicago"
 crime_type_set_sweep = [{"BURGLARY"}]
-cell_width_sweep = [250]
+cell_width_sweep = [100]
 # If we did spatial offsets, that would belong here too
 # Also if there's a convenient way to specify Chicago vs other data set, do that here
 
@@ -516,7 +518,8 @@ cell_width_sweep = [250]
 # Data parameters
 print("Declaring parameters...")
 datadir = os.path.join("..", "..", "Data")
-chicago_file_name = "chicago_all_old.csv"
+#chicago_file_name = "chicago_all_old.csv"
+chicago_file_name = "chi_all_s_BURGLARY_010101_190101.csv"
 chicago_side = "South"
 chicago_load_type = "snapshot"
 if "all" in chicago_file_name:
@@ -525,17 +528,6 @@ chicago_file_path = os.path.join(datadir, chicago_file_name)
 # Chicago module requires this line to access some data
 chicago.set_data_directory(datadir)
 
-
-
-
-crime_type_set = {"BURGLARY"}
-
-
-
-
-# Spatial model parameters
-cell_width = 250
-cell_height = cell_width
 
 
 # Time parameters
@@ -621,16 +613,14 @@ result_info_header = [
 
 
 
-
-
 print("...declared parameters.")
 
 
+
 date_today = datetime.date.today()
-date_today_str = "{:02}{:02}{:02}".format(date_today.year%100, date_today.month, date_today.day)
+date_today_str = getSixDigitDate(date_today)
 
 # Create csv file
-#csv_fname = "test190513.csv"
 out_csv_fname = "results_{}_{}_{}_{}_{}.csv".format(date_today_str, dataset_name, earliest_test_date_str, test_date_range, test_date_step)
 out_csv_full_path = os.path.join(datadir, out_csv_fname)
 
@@ -661,8 +651,7 @@ with open(out_csv_full_path, "w") as csvf:
         region_polygon = chicago.get_side(chicago_side)
         
         # Obtain data set within relevant region
-        points_crime_region = open_cp.geometry.intersect_timed_points(points_crime, 
-                                                                      region_polygon)
+        points_crime_region = open_cp.geometry.intersect_timed_points(points_crime, region_polygon)
         
         
         obtain_data_end_time = time.time()
@@ -680,7 +669,7 @@ with open(out_csv_full_path, "w") as csvf:
             obtain_reg_start_time = time.time()
             
             # Obtain grid with cells only overlaid on relevant region
-            masked_grid_region = open_cp.geometry.mask_grid_by_intersection(region_polygon, open_cp.data.Grid(xsize=cell_width, ysize=cell_height, xoffset=0, yoffset=0))
+            masked_grid_region = open_cp.geometry.mask_grid_by_intersection(region_polygon, open_cp.data.Grid(xsize=cell_width, ysize=cell_width, xoffset=0, yoffset=0))
             
             # Get a list/tuple of all cellcoords in the region
             cellcoordlist_region = getRegionCells(masked_grid_region)
@@ -759,6 +748,8 @@ with open(out_csv_full_path, "w") as csvf:
                     elif model_name in ["naivecount", "rhs", "phs"]:
                         args_to_use.append(points_crime_region_train)
                         args_to_use.append(masked_grid_region)
+                        if model_name=="phs":
+                            args_to_use.append(start_test)
                     
                     
                     # PARAM: param sweep for specific model

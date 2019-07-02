@@ -155,10 +155,12 @@ def RandomlySortCells(cells, seed=None):
 def runNaiveCount_model(data_points, grid):
     crime_ctr = countPointsPerCell(data_points, grid)
     grid_cells = getRegionCells(grid)
+    print("Naive Count results:")
     print(sorted(grid_cells)[0])
     print(sorted(grid_cells)[-1])
     print(max([x[0] for x in grid_cells]))
     print(max([x[1] for x in grid_cells]))
+    print("(^^^End of Naive Count results)\n")
     return sorted(grid_cells, key=lambda x:crime_ctr[x], reverse=True)
 
 
@@ -216,29 +218,48 @@ def all_knox_ratios(result):
 
 
 
-
-
-
-def runPhsModel(training_data, grid, time_unit, dist_unit, time_bandwidth, dist_bandwidth, weight="linear"):
+def printPhsRiskMatrixInfo(phs_grid_risk_matrix):
     
+    print(f"Type of phs_grid_risk_matrix: {type(phs_grid_risk_matrix)}")
+    print(f"Shape of phs_grid_risk_matrix: {phs_grid_risk_matrix.shape}")
+    valctr = Counter()
+    for somerow in phs_grid_risk_matrix:
+        valctr.update(somerow)
+    print("Frequency of values in grid:")
+    print(valctr)
+    print("Integer grid:")
+    indexrowh = ""
+    indexrowt = ""
+    indexrowo = ""
+    for i in range(105):
+        indexrowh += str(int(i/100))
+        indexrowt += str(int((i%100)/10))
+        indexrowo += str(i%10)
+    print(indexrowh)
+    print(indexrowt)
+    print(indexrowo)
+    srctr = 0
+    scoremap = "0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZ"
+    for somerow in (8*phs_grid_risk_matrix[:,:]).astype(int).tolist():
+        print("".join([scoremap[x] for x in somerow]) + " " + str(srctr))
+        srctr += 1
+    print(f"Num rows printed: {srctr}")
+    sys.exit(0)
+
+
+
+
+
+def runPhsModel(training_data, grid, cutoff_time, time_unit, dist_unit, time_bandwidth, dist_bandwidth, weight="linear"):
     
     grid_cells = getRegionCells(grid=grid)
-    print(f"Type of grid_cells: {type(grid_cells)}")
-    print(f"Type of element of grid_cells: {type(grid_cells[0])}")
-    print(f"Length of grid_cells: {len(grid_cells)}")
     
     # Obtain model and prediction on grid cells
     phs_predictor = phs.ProspectiveHotSpot(grid=grid)
     phs_predictor.data = training_data
-    print(f"Type of phs_predictor: {type(phs_predictor)}")
     
     dist_band_in_units = dist_bandwidth/dist_unit
     time_band_in_units = time_bandwidth/time_unit
-    print(f"dist_band_in_units: {dist_band_in_units}")
-    print(f"time_band_in_units: {time_band_in_units}")
-    
-    print(f"time_bandwidth: {str(time_bandwidth)}")
-    print(f"time_unit: {str(time_unit)}")
     
     if weight=="linear":
         phs_predictor.weight = phs.LinearWeightNormalised(space_bandwidth=dist_band_in_units, time_bandwidth=time_band_in_units)
@@ -247,32 +268,41 @@ def runPhsModel(training_data, grid, time_unit, dist_unit, time_bandwidth, dist_
     
     phs_predictor.grid = dist_unit
     phs_predictor.time_unit = time_unit
-    print(f"dist_unit: {dist_unit}")
-    print(f"time_unit: {str(time_unit)}")
     
-    
-    cutoff_time = sorted(training_data.timestamps)[-1] + _day
+    # Only include this method of establishing cutoff_time if we want a
+    #  prediction for the day after the latest event in training data. If so,
+    #  this will ignore any event-less period of time between training and
+    #  test data, which means time decay may be less pronounced.
+    #cutoff_time = sorted(training_data.timestamps)[-1] + _day
     
     phs_grid_risk = phs_predictor.predict(cutoff_time, cutoff_time)
-    print(f"Type of phs_grid_risk: {type(phs_grid_risk)}")
-    
-    
     
     #phs_grid_risk = open_cp.predictors.grid_prediction(phs_risk, grid)
     phs_grid_risk_matrix = phs_grid_risk.intensity_matrix
-    print(f"Type of phs_grid_risk_matrix: {type(phs_grid_risk_matrix)}")
-    print(phs_grid_risk_matrix)
-    print(f"Shape of phs_grid_risk_matrix: {phs_grid_risk_matrix.shape}")
-    print("First 10x10 of phs_grid_risk_matrix:")
-    print(phs_grid_risk_matrix[20:30,20:30])
-    valctr = Counter()
-    for somerow in phs_grid_risk_matrix:
-        valctr.update(somerow)
-    print(valctr)
-    print("First 40 columns:")
-    for somerow in (4*phs_grid_risk_matrix[:,:40]).astype(int).tolist():
-        print(somerow)
-    sys.exit(0)
+    
+    
+    
+    
+    # PHS info:
+    # Type of grid_cells: <class 'tuple'>
+    # Type of element of grid_cells: <class 'tuple'>
+    # Length of grid_cells: 5587
+    # Type of phs_predictor: <class 'open_cp.prohotspot.ProspectiveHotSpot'>
+    # dist_band_in_units: 4.0
+    # time_band_in_units: 4.0
+    # time_bandwidth: 4 weeks
+    # time_unit: 1 weeks
+    # dist_unit: 100
+    # time_unit: 1 weeks
+    # Type of phs_grid_risk: <class 'open_cp.predictors.GridPredictionArray'>
+    
+    
+    #print(f"Timestamps:")
+    #print(f"{training_data.timestamps}")
+    #print(f"Lat/long coords:")
+    #print(f"{training_data.coords}")
+    #printPhsRiskMatrixInfo(phs_grid_risk_matrix)
+    
     
     # Sort cellcoords by risk in intensity matrix, highest risk first
     return sortCellsByRiskMatrix(grid_cells, phs_grid_risk_matrix)
@@ -360,10 +390,11 @@ def runModelAndSortCells(model_name, model_args):
         #   dist_bandwidth (ex: 500 )
         #   weight (ex: "linear", "classic" )
         
-        time_unit, time_bandwidth, dist_unit, dist_bandwidth, weight = other_model_args
+        cutoff_time, time_unit, time_bandwidth, dist_unit, dist_bandwidth, weight = other_model_args
         return runPhsModel(
                 training_data = points_crime_region_train, 
                 grid = masked_grid_region, 
+                cutoff_time = cutoff_time, 
                 time_unit = time_unit, 
                 dist_unit = dist_unit, 
                 time_bandwidth = time_bandwidth, 
@@ -440,13 +471,9 @@ init_start_time = time.time()
 
 
 
-
-
-
-
 #models_to_run = ["random", "naivecount", "rhs", "phs", "ideal"]
-#models_to_run = ["random", "naivecount", "phs", "ideal"]
-models_to_run = ["naivecount","phs"]
+models_to_run = ["random", "naivecount", "phs", "ideal"]
+#models_to_run = ["naivecount","phs"]
 #models_to_run = ["phs"]
 
 model_param_dict = dict()
@@ -467,11 +494,11 @@ model_param_dict["rhs"] = list(product(rhs_seeds, rhs_bandwidth_sweep))
 phs_time_units = [np.timedelta64(1, "W")]
 #phs_time_bands = [np.timedelta64(4, "W")]
 #phs_time_bands = [np.timedelta64(x, "W") for x in range(1,7)]
-phs_time_bands = [np.timedelta64(x, "W") for x in range(1,2)]
+phs_time_bands = [np.timedelta64(x, "W") for x in range(1,9)]
 phs_dist_units = [100]
 #phs_dist_bands = [500]
 #phs_dist_bands = [x*100 for x in range(1,11)]
-phs_dist_bands = [x*100 for x in range(4,5)]
+phs_dist_bands = [x*100 for x in range(1,11)]
 phs_weights = ["linear"]
 model_param_dict["phs"] = list(product(
                             phs_time_units, 
@@ -488,7 +515,7 @@ model_param_dict["phs"] = list(product(
 # Parameters for overall data set
 dataset_name = "Chicago"
 crime_type_set_sweep = [{"BURGLARY"}]
-cell_width_sweep = [200]
+cell_width_sweep = [100]
 # If we did spatial offsets, that would belong here too
 # Also if there's a convenient way to specify Chicago vs other data set, do that here
 
@@ -504,7 +531,8 @@ cell_width_sweep = [200]
 print("Declaring parameters...")
 datadir = os.path.join("..", "..", "Data")
 #chicago_file_name = "chicago_all_old.csv"
-chicago_file_name = "chi_all_BURGLARY_160101_180101_5.csv"
+#chicago_file_name = "chi_all_s_BURGLARY_010101_190101.csv"
+chicago_file_name = "chi_all_s_BURGLARY_RES_010101_190101.csv"
 chicago_side = "South"
 chicago_load_type = "snapshot"
 if "all" in chicago_file_name:
@@ -513,17 +541,6 @@ chicago_file_path = os.path.join(datadir, chicago_file_name)
 # Chicago module requires this line to access some data
 chicago.set_data_directory(datadir)
 
-
-
-
-crime_type_set = {"BURGLARY"}
-
-
-
-
-# Spatial model parameters
-#cell_width = 250
-#cell_height = cell_width
 
 
 # Time parameters
@@ -536,10 +553,10 @@ crime_type_set = {"BURGLARY"}
 #  and testing data, regardless of the sizes of those data sets.
 
 # Of all planned experiments, earliest start of a test data set
-earliest_test_date = "2017-01-01"
+earliest_test_date = "2013-01-01"
 earliest_test_date_str = "".join(earliest_test_date.split("-"))[2:]
 # Time between earliest experiment and latest experiment
-test_date_range = "1W"
+test_date_range = "5Y"
 # Latest start of a test data set, calculated from above 2 variables
 latest_test_date = generateLaterDate(earliest_test_date, test_date_range)
 
@@ -612,11 +629,11 @@ result_info_header = [
 print("...declared parameters.")
 
 
+
 date_today = datetime.date.today()
 date_today_str = getSixDigitDate(date_today)
 
 # Create csv file
-#csv_fname = "test190606.csv"
 out_csv_fname = "results_{}_{}_{}_{}_{}.csv".format(date_today_str, dataset_name, earliest_test_date_str, test_date_range, test_date_step)
 out_csv_full_path = os.path.join(datadir, out_csv_fname)
 
@@ -647,8 +664,6 @@ with open(out_csv_full_path, "w") as csvf:
         region_polygon = chicago.get_side(chicago_side)
         
         # Obtain data set within relevant region
-        print(f"type of points_crime: {type(points_crime)}")
-        print(f"type of region_polygon: {type(region_polygon)}")
         points_crime_region = open_cp.geometry.intersect_timed_points(points_crime, region_polygon)
         
         
@@ -746,6 +761,8 @@ with open(out_csv_full_path, "w") as csvf:
                     elif model_name in ["naivecount", "rhs", "phs"]:
                         args_to_use.append(points_crime_region_train)
                         args_to_use.append(masked_grid_region)
+                        if model_name=="phs":
+                            args_to_use.append(start_test)
                     
                     
                     # PARAM: param sweep for specific model
@@ -753,8 +770,6 @@ with open(out_csv_full_path, "w") as csvf:
                     for param_combo_index, param_combo in enumerate(model_param_dict[model_name]):
                         
                         sorted_cells = runModelAndSortCells(model_name, args_to_use + list(param_combo))
-                        
-                        print(sorted_cells[:10])
                         
                         hit_rate_list = getHitRateList(sorted_cells, cells_testcrime_ctr)
                         

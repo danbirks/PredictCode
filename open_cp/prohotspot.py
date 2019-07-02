@@ -119,10 +119,8 @@ class LinearWeightNormalised(Weight):
     def __init__(self, space_bandwidth=8, time_bandwidth=8, epsilon = 0.1):
         self.space_bandwidth = space_bandwidth
         self.time_bandwidth = time_bandwidth
-        print(f"space_bandwidth is: {space_bandwidth}")
-        print(f"time_bandwidth is: {time_bandwidth}")
-        print(f"type of space_bandwidth is: {type(space_bandwidth)}")
-        print(f"type of time_bandwidth is: {type(time_bandwidth)}")
+        # type of space_bandwidth is: <class 'float'>
+        # type of time_bandwidth is: <class 'numpy.float64'>
 
     def __call__(self, dt, dd):
         mask = (dt < self.time_bandwidth) & (dd < self.space_bandwidth)
@@ -216,11 +214,32 @@ class ProspectiveHotSpot(_predictors.DataTrainer):
     def _cell(self, x, y):
         gridx = _np.floor((x - self.region.xmin) / self.grid)
         gridy = _np.floor((y - self.region.ymin) / self.grid)
+        #print(f"Orig xy: {(x,y)}")
+        #print(f"Grid xy: {(gridx,gridy)}")
         return gridx, gridy
 
     def _total_weight(self, time_deltas, coords, cellx, celly):
         gridx, gridy = self._cell(coords[0], coords[1])
         distances = self.distance(gridx, gridy, cellx, celly)
+        #print(f"type of time_deltas: {type(time_deltas)}")
+        #print(f"type of coords: {type(coords)}")
+        #print(f"type of gridx: {type(gridx)}")
+        #print(f"type of gridy: {type(gridy)}")
+        #print(f"type of distances: {type(distances)}")
+        #print(f"shape of time_deltas: {time_deltas.shape}")
+        #print(f"shape of coords: {coords.shape}")
+        #print(f"shape of gridx: {gridx.shape}")
+        #print(f"shape of gridy: {gridy.shape}")
+        #print(f"shape of distances: {distances.shape}")
+        #if any([x<4 for x in distances]):
+        #    print("")
+        #    print(f" (cellx,celly): {(cellx,celly)}")
+        #    print(f" time_deltas: {time_deltas}")
+        #    print(f" coords: {coords}")
+        #    print(f" gridx: {gridx}")
+        #    print(f" gridy: {gridy}")
+        #    print(f" distances: {distances}")
+        #    print(f" weight(time_deltas, distances): {self.weight(time_deltas, distances)}")
         return _np.sum(self.weight(time_deltas, distances))
 
     def predict(self, cutoff_time, predict_time):
@@ -242,6 +261,8 @@ class ProspectiveHotSpot(_predictors.DataTrainer):
         width = int(_np.rint((self.region.xmax - self.region.xmin) / self.grid))
         height = int(_np.rint((self.region.ymax - self.region.ymin) / self.grid))
         matrix = _np.empty((height, width))
+        
+        
         for x in range(width):
             for y in range(height):
                 matrix[y][x] = self._total_weight(time_deltas, events.coords, x, y)
