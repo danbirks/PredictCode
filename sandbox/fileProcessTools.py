@@ -64,7 +64,7 @@ def combineNaivePhsCsv(naivefile, phsfile, newfile="temp.csv"):
     sys.exit(0)
 
 
-def loadGenericData(filepath, crime_type_set = {"BURGLARY"}, date_format_csv = "%m/%d/%Y %I:%M:%S %p", epsg = 3435, proj=None, longlat=True):
+def loadGenericData(filepath, crime_type_set = {"BURGLARY"}, date_format_csv = "%m/%d/%Y %I:%M:%S %p", epsg = None, proj=None, longlat=True, infeet=False):
     
     # Note: Data is expected in a csv file with the following properties:
     # Row 0 = Header
@@ -75,8 +75,11 @@ def loadGenericData(filepath, crime_type_set = {"BURGLARY"}, date_format_csv = "
     # Col 4 = Location type (optional)
     
     # EPSGs:
-    # 3435 = Chicago
-    # 27700 = UK
+    # 3435 or 4326 or 3857 or...? = Chicago
+    #   frame.crs = {"init": "epsg:4326"} # standard geocoords
+    #   "We'll project to 'web mercator' and use tilemapbase to view the regions with an OpenStreetMap derived basemap"
+    #   frame = frame.to_crs({"init":"epsg:3857"})
+    # 27700 = UK???
     
     if longlat:
         try:
@@ -93,43 +96,36 @@ def loadGenericData(filepath, crime_type_set = {"BURGLARY"}, date_format_csv = "
             proj = _proj.Proj({"init": "epsg:"+str(epsg)})
     
     
-    
+    _FEET_IN_METERS = 3937 / 1200
     data = []
     with open(filepath) as f:
         csvreader = csv.reader(f)
         header = next(csvreader)
         for row in csvreader:
+            # Confirm crime type is one we're interested in
             crime_type = row[3].strip()
             if crime_type not in crime_type_set:
                 continue
-            t = row[0]
-            long_float = float(row[1])
-            lat_float = float(row[2])
-            
-            x, y = long_float, lat_float
+            # Grab time, x, and y values (x & y may be long & lat)
+            t = datetime.datetime.strptime(row[0], date_format_csv)
+            x = float(row[1])
+            y = float(row[2])
             if longlat:
-                x, y = proj(long_float, lat_float)
-            
-            data.append((datetime.datetime.strptime(t, date_format_csv), 
-                         x, 
-                         y))
-        
-        
-    
-    
+                x, y = proj(x, y)
+            else:
+                if infeet:
+                    x /= _FEET_IN_METERS
+                    y /= _FEET_IN_METERS
+            # Store data trio
+            data.append((t, x, y))
     
     
     data.sort(key = lambda triple : triple[0])
+    times = [triple[0] for triple in data]
     xcoords = np.empty(len(data))
     ycoords = np.empty(len(data))
     for i, triple in enumerate(data):
         xcoords[i], ycoords[i] = triple[1], triple[2]
-    times = [triple[0] for triple in data]
-    
-    if not longlat:
-        _FEET_IN_METERS = 3937 / 1200
-        xcoords /= _FEET_IN_METERS
-        ycoords /= _FEET_IN_METERS
     
     timedpoints = TimedPoints.from_coords(times, xcoords, ycoords)
     
@@ -143,7 +139,7 @@ def loadGenericData(filepath, crime_type_set = {"BURGLARY"}, date_format_csv = "
 
 
 
-def trialLoadGenericData(filepath):
+def trialLoadGenericDataOLD(filepath):
     
     
     sys.path.insert(0, os.path.abspath(".."))
@@ -418,7 +414,7 @@ print("ok done")
 """
 
 
-
+"""
 # Testing contrived Durham data
 datadir = os.path.join("..", "..", "Data")
 #durfname = os.path.join(datadir, "chi_all_s_BURGLARY_RES_010101_190101_std.csv")
@@ -431,5 +427,47 @@ fd_len = len(fd_times)
 for i, d in enumerate(zip(fd_times, fd_xs, fd_ys)):
     print(f'{i} {d[0]} {d[1]} {d[2]}')
 print("ok done")
+"""
+
+"""
+# Converting durham.kml Force Boundaries file from
+#   https://data.police.uk/data/boundaries/
+# ogr2ogr -f GeoJSON durham.json durham.kml
+import geopandas as gpd
+datadir = os.path.join("..", "..", "Data")
+durhamfilename = "durham.json"
+durhamfilepath = os.path.join(datadir, durhamfilename)
+frame = gpd.read_file(durhamfilepath)
+frame.crs == {"init": "epsg:4326"}
+frame.head()
+
+import matplotlib.pyplot as plt
+fig, ax = plt.subplots(figsize=(10,14))
+_ = frame.plot(ax=ax)
+_ = frame.plot(ax=ax, column="Name")
+
+import tilemapbase
+extent = tilemapbase.extent_from_frame(frame, 1000, 5)
+fig, ax = plt.subplots(figsize=(14,15))
+extent.plot(ax, tilemapbase.tiles.OSM, alpha=1)
+frame.plot(ax=ax, column="region", alpha=0.5)
+for _, row in frame.iterrows():
+    x, y = row.geometry.centroid.coords[0]
+    ax.text(x, y, row.area_numbe, horizontalalignment='center', verticalalignment='center')
+ax.set_title("Chicago regions")
+ax.axes.xaxis.set_visible(False)
+ax.axes.yaxis.set_visible(False)
+ax.set_aspect(1)
+None
+"""
+
+
+datadir = os.path.join("..", "..", "Data")
+#chicsvname_ll = os.path.join(datadir, "chi_all_s_BURGLARY_RES_010101_190101_std.csv")
+chicsvname_xy = os.path.join(datadir, "chi_all_s_BURGLARY_RES_010101_190101_stdXY.csv")
+chidata = loadGenericData(chicsvname_xy, longlat=False, infeet=True)
+ts = chidata.timestamps
+print(len(ts))
+
 
 
