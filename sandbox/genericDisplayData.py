@@ -19,6 +19,7 @@ import geopandas as gpd
 import matplotlib.pyplot as plt
 from descartes import PolygonPatch
 from matplotlib.collections import PatchCollection
+import matplotlib
 
 
 # Elements from PredictCode's custom "open_cp" package
@@ -32,6 +33,21 @@ from open_cp.geometry import intersect_timed_points, \
                              mask_grid_by_intersection
 from open_cp.plot import patches_from_grid
 import open_cp.prohotspot as phs
+
+
+
+_cdict = {'red':   [(0.0,  1.0, 1.0),
+                    (1.0,  1.0, 1.0)],
+          'green': [(0.0,  1.0, 1.0),
+                    (1.0,  0.0, 0.0)],
+          'blue':  [(0.0,  0.2, 0.2),
+                    (1.0,  0.2, 0.2)]}
+yellow_to_red = matplotlib.colors.LinearSegmentedColormap("yellow_to_red", _cdict)
+
+
+
+
+
 
 
 
@@ -223,10 +239,12 @@ def getHitRateList(sorted_cells, cell_hit_map):
 
 
 
-def plotPointsOnGrid(points, masked_grid, polygon, title=None, sizex=8, sizey=8):
+def plotPointsOnGrid(points, masked_grid, polygon, title=None, sizex=8, sizey=None):
     
+    if sizey == None:
+        sizey = sizex
     
-    fig, ax = plt.subplots(figsize=(8,8))
+    fig, ax = plt.subplots(figsize=(sizex,sizey))
     
     ax.add_patch(PolygonPatch(polygon, fc="none", ec="Black"))
     ax.add_patch(PolygonPatch(polygon, fc="Blue", ec="none", alpha=0.2))
@@ -249,6 +267,45 @@ def plotPointsOnGrid(points, masked_grid, polygon, title=None, sizex=8, sizey=8)
 
 
 
+def plotPointsOnColorGrid(polygon, 
+                          points, 
+                          mesh_info, 
+                          value_matrix, 
+                          cmap_choice, 
+                          title=None, 
+                          sizex=8, 
+                          sizey=None, 
+                          edge_color = "black", 
+                          point_color = "black", 
+                          point_shape = "+"):
+    
+    if sizey == None:
+        sizey = sizex
+    
+    fig, ax = plt.subplots(figsize=(sizex,sizey))
+    ax.set_aspect(1)
+    
+    # Color the cells based on the value matrix
+    ax.pcolormesh(*mesh_info, value_matrix, cmap=cmap_choice)
+    
+    # Add outline of region
+    ax.add_patch(PolygonPatch(polygon, fc="none", ec="Black"))
+    # Plot events
+    ax.scatter(points.xcoords,
+               points.ycoords,
+               marker=point_shape, 
+               color=point_color, 
+               alpha=0.2)
+    
+    # Find bounds of the polygon
+    xmin, ymin, xmax, ymax = polygon.bounds
+    # Set the axes to have a buffer of 500 around the polygon
+    ax.set(xlim=[xmin-500,xmax+500], ylim=[ymin-500,ymax+500])
+    
+    if title != None:
+        ax.set_title(title)
+    
+    return
 
 
 
@@ -271,11 +328,70 @@ def sortCellsByRiskMatrix(cells, risk_matrix):
     return cells_risksort
 
 
+# sorted_cell_list = output from sortCellsByRiskMatrix, e.g.
+# cutoff_list = proportions for tiered results, like [0.01,0.02,0.05,0.1]
+# score_list = scores to assign to each tier
+#               length should be 1 more than cutoff list
+#               by default, evenly spaced from 0 to 1
+def rankMatrixFromSortedCells(masked_matrix, 
+                              sorted_cell_list, 
+                              cutoff_list, 
+                              score_list=None):
+    if score_list == None:
+        #score_list = list(range(len(cutoff_list), -1, -1))
+        score_list = np.linspace(0,1,len(cutoff_list)+1)
+    if len(score_list) != len(cutoff_list)+1:
+        print("Error! Score list is not 1 more than cutoff list: \
+              Cutoff:{len(cutoff_list))} vs Score:{len(score_list))}")
+        sys.exit(1)
+    
+    rank_matrix = np.zeros_like(masked_matrix.mask, dtype=float)
+    """
+    print("type, shape, rank_matrix:")
+    print(type(rank_matrix))
+    print(rank_matrix.shape)
+    print(rank_matrix)
+    print("type, shape, masked_matrix:")
+    print(type(masked_matrix))
+    print(masked_matrix.shape)
+    print(masked_matrix)
+    """
+    
+    rank_matrix = masked_matrix.mask_matrix(rank_matrix)
+    
+    num_cells = len(sorted_cell_list)
+    curr_tier = 0
+    for i, c in enumerate(sorted_cell_list):
+        if masked_matrix.mask[c]:
+            print("Error! Cell in sorted list is a masked cell!")
+            print(c)
+            sys.exit(1)
+        while curr_tier < len(cutoff_list) \
+              and i/num_cells >= cutoff_list[curr_tier]:
+            curr_tier+=1
+        rank_matrix[c] = score_list[curr_tier]
+    
+    return rank_matrix
+    
+    
+
+
+
+
+
+
+
+
+
+
+
+
+
+
 
 
 def runPhsModel(training_data, grid, cutoff_time, time_unit, dist_unit, time_bandwidth, dist_bandwidth, weight="linear"):
     
-    grid_cells = getRegionCells(grid=grid)
     
     # Obtain model and prediction on grid cells
     phs_predictor = phs.ProspectiveHotSpot(grid=grid)
@@ -300,9 +416,16 @@ def runPhsModel(training_data, grid, cutoff_time, time_unit, dist_unit, time_ban
     
     phs_grid_risk = phs_predictor.predict(cutoff_time, cutoff_time)
     
-    #phs_grid_risk = open_cp.predictors.grid_prediction(phs_risk, grid)
-    phs_grid_risk_matrix = phs_grid_risk.intensity_matrix
     
+    
+    """
+    phs_grid_risk_matrix = phs_grid_risk.intensity_matrix
+    print("Type of risk matrix:")
+    print(type(phs_grid_risk_matrix))
+    print("Size of risk matrix:")
+    print(phs_grid_risk_matrix.size)
+    print("Shape of risk matrix:")
+    print(phs_grid_risk_matrix.shape)
     
     md = phs_grid_risk.mesh_data()
     print("Type of mesh_data()")
@@ -310,15 +433,28 @@ def runPhsModel(training_data, grid, cutoff_time, time_unit, dist_unit, time_ban
     for i,x in enumerate(md):
         print(f"Type of md-{i}")
         print(type(x))
-        print(x.size)
+        print(f"Shape of md-{i}")
+        print(x.shape)
+        print(x[:5])
+        print(x[-5:])
+    """
     
-    sys.exit(0)
     
     
     
+    # We might need to mask the risk to the relevant region?
+    # Not sure if there's a reason we wouldn't want it masked...
+    # But then we would need to pass in masked_grid_region to this function?
+    # Or maybe it's sufficient to do it later, if we even need it at all?
+    #phs_grid_risk.mask_with(masked_grid_region)
+    
+    
+    #return phs_grid_risk.intensity_matrix
+    return grid.mask_matrix(phs_grid_risk.intensity_matrix)
     
     # Sort cellcoords by risk in intensity matrix, highest risk first
-    return sortCellsByRiskMatrix(grid_cells, phs_grid_risk_matrix)
+    #grid_cells = getRegionCells(grid=grid)
+    #return sortCellsByRiskMatrix(grid_cells, phs_grid_risk_matrix)
     
 
 
@@ -476,7 +612,7 @@ test_len = "1W"
 #test_date_step = "1D"
 test_date_step = test_len
 # Coverage rates to test
-coverage_rate_sweep = [0.01, 0.02, 0.05, 0.10]
+coverage_bounds = [0.01, 0.02, 0.05, 0.10]
 # Geojson file
 #geojson_file_name = "Chicago_Areas.geojson"
 geojson_file_name = "Chicago_South_Side_2790.geojson"
@@ -488,6 +624,8 @@ geojson_file_name = "Chicago_South_Side_2790.geojson"
 # models_to_run = ["naivecount","phs"]
 
 
+
+discrete_colors = matplotlib.colors.ListedColormap(['red', 'yellow', 'green', 'blue', 'white'])
 
 
 ###
@@ -564,12 +702,14 @@ with open(out_csv_full_path, "w") as csvf:
                                                             yoffset=0)
                                                    )
     
+    masked_grid_mesh = masked_grid_region.mesh_info()
+    
+    
     # Get tuple of all cells in gridded region
     cellcoordlist_region = getRegionCells(masked_grid_region)
     
     print("...obtained full data set and region.")
     print(f'Time taken to obtain data: {time.time() - chktime_obtain_data}')
-    
     
     
     
@@ -595,7 +735,7 @@ with open(out_csv_full_path, "w") as csvf:
         
         
         
-        
+        # Obtain training data
         points_crime_region_train = getTimedPointsInTimeRange(points_crime_region, 
                                                               start_train, 
                                                               end_train)
@@ -604,17 +744,14 @@ with open(out_csv_full_path, "w") as csvf:
         num_crimes_train = len(points_crime_region_train.timestamps)
         
         
-        ### TESTING DATA, USED FOR EVALUATION
-        # (Also used for Ideal model, which is why we create it here)
-        
-        # Obtain selection of data for testing
+        # Obtain testing data
         points_crime_region_test = getTimedPointsInTimeRange(points_crime_region, 
                                                               start_test, 
                                                               end_test)
         # Count how many crimes there were in this test data set
         num_crimes_test = len(points_crime_region_test.timestamps)
         
-        # Count the number of crimes per cell
+        # Count the number of crimes per cell in test data
         #  This is used for evaluation and also for the "ideal" model
         cells_testcrime_ctr = countPointsPerCell(points_crime_region_test, 
                                                  masked_grid_region)
@@ -626,6 +763,9 @@ with open(out_csv_full_path, "w") as csvf:
         
         
         
+        
+        
+        # Plot training data on plain grid
         plotPointsOnGrid(points_crime_region_train, 
                          masked_grid_region, 
                          region_polygon, 
@@ -633,6 +773,7 @@ with open(out_csv_full_path, "w") as csvf:
                          sizex=8, 
                          sizey=8)
         
+        # Plot testing data on plain grid
         plotPointsOnGrid(points_crime_region_test, 
                          masked_grid_region, 
                          region_polygon, 
@@ -644,7 +785,10 @@ with open(out_csv_full_path, "w") as csvf:
         
         
         
-        sorted_cells = runPhsModel(training_data=points_crime_region_train, 
+        # Model implementation here
+        
+        
+        phs_data_matrix = runPhsModel(training_data=points_crime_region_train, 
                                    grid=masked_grid_region, 
                                    cutoff_time=start_test, 
                                    time_unit=np.timedelta64(1, "W"), 
@@ -652,6 +796,95 @@ with open(out_csv_full_path, "w") as csvf:
                                    time_bandwidth=np.timedelta64(4, "W"), 
                                    dist_bandwidth=400, 
                                    weight="linear")
+        #phs_data_matrix = masked_grid_region.mask_matrix(phs_data_matrix)
+        
+        
+        plotPointsOnColorGrid(polygon = region_polygon, 
+                              points = points_crime_region_train, 
+                              mesh_info = masked_grid_mesh, 
+                              value_matrix = phs_data_matrix, 
+                              cmap_choice = yellow_to_red, 
+                              title="PHS map", 
+                              sizex=10, 
+                              sizey=10)
+        
+        
+        
+        # Count the number of crimes per cell in training data
+        #  This is used for the naive model
+        cells_traincrime_ctr = countPointsPerCell(points_crime_region_train, 
+                                                  masked_grid_region)
+        
+        
+        
+        
+        naive_data_matrix = np.zeros([masked_grid_region.yextent, masked_grid_region.xextent])
+        naive_data_matrix = masked_grid_region.mask_matrix(naive_data_matrix)
+        for c in cells_traincrime_ctr:
+            naive_data_matrix[c] = cells_traincrime_ctr[c]
+        
+        
+        
+        
+        plotPointsOnColorGrid(polygon = region_polygon, 
+                              points = points_crime_region_train, 
+                              mesh_info = masked_grid_mesh, 
+                              value_matrix = naive_data_matrix, 
+                              cmap_choice = yellow_to_red, 
+                              title="Naive map", 
+                              sizex=10, 
+                              sizey=10)
+        
+        
+        
+        
+        sorted_cells_naive = sortCellsByRiskMatrix(cellcoordlist_region, 
+                                                   naive_data_matrix)
+        
+        naive_rank_matrix = rankMatrixFromSortedCells(masked_grid_region, 
+                                                      sorted_cells_naive, 
+                                                      coverage_bounds)
+        
+        plotPointsOnColorGrid(polygon = region_polygon, 
+                              points = points_crime_region_train, 
+                              mesh_info = masked_grid_mesh, 
+                              value_matrix = naive_rank_matrix, 
+                              cmap_choice = discrete_colors, 
+                              title="Naive map ranked by coverage", 
+                              sizex=10, 
+                              sizey=10)
+        
+        
+        sorted_cells_phs = sortCellsByRiskMatrix(cellcoordlist_region, 
+                                                   phs_data_matrix)
+        
+        phs_rank_matrix = rankMatrixFromSortedCells(masked_grid_region, 
+                                                      sorted_cells_phs, 
+                                                      coverage_bounds)
+        
+        plotPointsOnColorGrid(polygon = region_polygon, 
+                              points = points_crime_region_train, 
+                              mesh_info = masked_grid_mesh, 
+                              value_matrix = phs_rank_matrix, 
+                              cmap_choice = discrete_colors, 
+                              title="PHS map, ranked by coverage", 
+                              sizex=10, 
+                              sizey=10)
+        
+        
+        
+        
+        
+        
+        
+        
+        sys.exit(0)
+        
+        
+        
+        
+        
+        
         
         
         

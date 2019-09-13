@@ -283,6 +283,12 @@ class GridPredictionArray(GridPrediction):
         """
         xcoords = _np.arange(self._matrix.shape[1] + 1) * self.xsize + self.xoffset
         ycoords = _np.arange(self._matrix.shape[0] + 1) * self.ysize + self.yoffset
+        print(f"matrixshape1 = {self._matrix.shape[1]}")
+        print(f"xsize = {self.xsize}")
+        print(f"xoffset = {self.xoffset}")
+        print(f"matrixshape0 = {self._matrix.shape[0]}")
+        print(f"ysize = {self.ysize}")
+        print(f"yoffset = {self.yoffset}")
         return (xcoords, ycoords)
     
     def percentile_matrix(self):

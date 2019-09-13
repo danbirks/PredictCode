@@ -283,6 +283,17 @@ class MaskedGrid(BoundedGrid):
           (yextent, xextent).
         """
         return _np.ma.masked_array(matrix, self.mask)
+    
+    
+    def mesh_info(self):
+        """Return mesh info to be used by matplotlib.pyplot.pcolormesh.
+        
+        See also open_cp.predictors.GridPredictionArray.mesh_data
+        """
+        
+        xcoords = _np.arange(self.xextent + 1) * self.xsize + self.xoffset
+        ycoords = _np.arange(self.yextent + 1) * self.ysize + self.yoffset
+        return (xcoords, ycoords)
 
 
 def order_by_time(timestamps, xcoords, ycoords):
