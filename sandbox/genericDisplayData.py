@@ -3,6 +3,15 @@
 Created on Thu Aug  1 14:34:27 2019
 
 @author: lawdfo
+
+
+Purpose:
+    Visualise output of spatio-temporal crime risk evaluations. In contrast
+    to previous code, the goal here is to not have any hard-coded parameters
+    that are specific to a given dataset (e.g., the Chicago data we've been
+    using for testing).
+
+
 """
 
 import sys
@@ -35,7 +44,7 @@ from open_cp.plot import patches_from_grid
 import open_cp.prohotspot as phs
 
 
-
+# Define color map that ranges from yellow to red
 _cdict = {'red':   [(0.0,  1.0, 1.0),
                     (1.0,  1.0, 1.0)],
           'green': [(0.0,  1.0, 1.0),
@@ -44,11 +53,8 @@ _cdict = {'red':   [(0.0,  1.0, 1.0),
                     (1.0,  0.2, 0.2)]}
 yellow_to_red = matplotlib.colors.LinearSegmentedColormap("yellow_to_red", _cdict)
 
-
-
-
-
-
+# Define color map for 5 discrete areas (most significant to least)
+discrete_colors = matplotlib.colors.ListedColormap(['red', 'yellow', 'green', 'blue', 'white'])
 
 
 
@@ -62,132 +68,23 @@ from crimeRiskTimeTools import generateLaterDate, \
 
 
 
-
-def onetimeConfirmSameData():
-    
-    # This code just confirmed that the new method gets same data as the old
-    chicago_file_name = "chi_all_s_BURGLARY_RES_010101_190101.csv"
-    chicago_file_path = os.path.join(datadir, chicago_file_name)
-    import open_cp.sources.chicago as chicago
-    points_crime_chiorig = chicago.load(chicago_file_path, crime_type_set, 
-                                type="all")
-    pc_t = points_crime.timestamps
-    pc_co_t = points_crime_chiorig.timestamps
-    print(len(pc_t))
-    print(len(pc_co_t))
-    print(all(pc_t==pc_co_t))
-    
-    pc_x = points_crime.xcoords
-    pc_y = points_crime.ycoords
-    pc_co_x = points_crime_chiorig.xcoords
-    pc_co_y = points_crime_chiorig.ycoords
-    x_diff = []
-    y_diff = []
-    for i in range(len(pc_t)):
-        x_diff.append(abs(pc_x[i]-pc_co_x[i]))
-        y_diff.append(abs(pc_y[i]-pc_co_y[i]))
-    x_diff = sorted(x_diff)
-    y_diff = sorted(y_diff)
-    print(x_diff[:10])
-    print(x_diff[-10:])
-    print(sum(x_diff)/len(pc_t))
-    print(y_diff[:10])
-    print(y_diff[-10:])
-    print(sum(y_diff)/len(pc_t))
-    
-
-def onetimeGeojsonManipulation():
-    
-    ###
-    # Here's how a Chicago polygon was acquired:
-    
-    # Obtain polygon shapely object for South side
-    #ss_polygon = chicago.get_side("South")
-    
-    
-    
-    geojson_dur_file_name = "durham.geojson"
-    geojson_dur_full_path = os.path.join(datadir, geojson_dur_file_name)
-    geo_frame_dur = gpd.read_file(geojson_dur_full_path)
-    
-    
-    geo_frame_chi = gpd.read_file(geojson_full_path)
-    chicago_side_mapping = {
-        "Far North" : [1,2,3,4,9,10,11,12,13,14,76,77],
-        "Northwest" : [15,16,17,18,19,20],
-        "North" : [5,6,7,21,22],
-        "West" : list(range(23, 32)),
-        "Central" : [8,32,33],
-        "South" : list(range(34,44)) + [60, 69],
-        "Southwest" : [56,57,58,59] + list(range(61,69)),
-        "Far Southwest" : list(range(70,76)),
-        "Far Southeast" : list(range(44,56))
-    }
-    geo_frame_chi["side"] = geo_frame_chi.area_numbe.map(lambda x : next(key
-         for key, item in chicago_side_mapping.items() if int(x) in item) )
-    _sides = geo_frame_chi.drop(["area", "area_num_1", "comarea", "comarea_id",
-                        "perimeter", "shape_area", "shape_len"], axis=1)
-    _sides.crs = {"init": "epsg:4326"} # global coordinate system
-    _sides = _sides.to_crs({"init": "epsg:2790"}) # East Illinois-specifc
-    
-    ss_polygon = _sides[_sides.side == "South"].unary_union
-    type(ss_polygon)
-    
-    
-    
-    
-    # Obtain GeoDataFrame with polygon's geometry
-    #  and with CRS epsg:2790
-    ss_frame = gpd.GeoDataFrame({"name":["South Side"]})
-    ss_frame.geometry = [ss_polygon]
-    ss_frame.crs = {"init":"epsg:2790"}
-    
-    
-    geojson_sschi_file_name = "Chicago_South_Side_2790.geojson"
-    geojson_sschi_full_path = os.path.join(datadir, geojson_sschi_file_name)
-    ss_frame.to_file(geojson_sschi_full_path, driver="GeoJSON")
-    
-    
-    
-    
-    # Open GeoJSON file
-    geojson_dur_file_name = "durham.geojson"
-    geojson_dur_full_path = os.path.join(datadir, geojson_dur_file_name)
-    geo_frame_dur = gpd.read_file(geojson_dur_full_path)
-    
-    # Remove unnecessary "Description" column
-    geo_frame_dur_nodesc = geo_frame_dur.drop(["Description"], axis=1)
-    # Set the name (we might not really need to do this)
-    geo_frame_dur_nodesc.iloc[0]["Name"] = "Durham"
-    # Transform data to UK-specific EPSG of 27700
-    geo_frame_dur_nodesc = geo_frame_dur_nodesc.to_crs({"init": "epsg:27700"})
-    
-    # Save off new version of geodataframe into GeoJSON file
-    geojson_dur_27_file_name = "Durham_27700.geojson"
-    geojson_dur_27_full_path = os.path.join(datadir, geojson_dur_27_file_name)
-    geo_frame_dur_nodesc.to_file(geojson_dur_27_full_path, driver="GeoJSON")
-    
-    
-    
-    """
-    Given original file:
-        Use ogr2ogr to convert to geojson if necessary
-            For example, given durham.kml, use this command:
-            > ogr2ogr -f GeoJSON durham.geojson durham.kml
-        Use some code from above to read that geojson,
-            form the union of certain subsets, if necessary
-            convert from EPSG 4326 to a local EPSG (like 2790 or 27700)
-            save it to a new geojson
-        
-    
-    
-    """
+# Custom functions
 
 
 
+"""
+getRegionCells
 
+Purpose:
+Generate tuple of all cell coordinates in a region's grid.
+Each element corresponds to (row, col) values of a cell --
+ that is, the 0-up index of the cell, not geographic coordinates
 
-# Generate tuple of all cells in a region's grid
+Input: grid object (open_cp.data.Grid), primarily for its:
+        yextent: number of cells in height of region
+        xextent: number of cells in width of region
+        mask: which cells of the full rectangle are within the area of interest
+"""
 def getRegionCells(grid):
     # Make sure to do yextent then xextent, because cellcoords
     #  correspond to (row,col) in grid
@@ -197,12 +94,16 @@ def getRegionCells(grid):
 
 
 
+"""
+countPointsPerCell
 
-# Given a TimedPoints object and a Grid (MaskedGrid?) object,
-#  return a Counter object that is a mapping from the grid cell
-#  coordinates to the number of points within the cell.
-#  Note that "grid cell coordinates" refers to which row of cells
-#  and which column of cells it's located at, NOT spatial coords.
+Purpose:
+Given a TimedPoints object and a Grid (MaskedGrid?) object,
+ return a Counter object that is a mapping from the grid cell
+ coordinates to the number of recognised points within the cell.
+ Note that "grid cell coordinates" refers to which row of cells
+ and which column of cells it's located at, NOT spatial coords.
+"""
 def countPointsPerCell(points, grid):
     # Get xy coords from TimedPoints
     xcoords, ycoords = points.xcoords, points.ycoords
@@ -210,19 +111,25 @@ def countPointsPerCell(points, grid):
     xgridinds = np.floor((xcoords - grid.xoffset) / grid.xsize).astype(np.int)
     ygridinds = np.floor((ycoords - grid.yoffset) / grid.ysize).astype(np.int)
     # Count the number of crimes per cell
-    # NOTE: We do (y,x) instead of (x,y) because cells are (row,col)!!!
+    # NOTE!: We do (y,x) instead of (x,y) because cells are (row,col)
     return Counter(zip(ygridinds, xgridinds))
 
 
 
+"""
+getHitRateList
 
-
-
-
-# Given a sorted list of cells, and a mapping from cells to number of events
-#  in those cells, return a list of numbers, of length equal to the given
-#  list of cells, representing the running total of number of events in all
-#  cells up to that point in the list.
+Purpose:
+Given a sorted list of cells, and a mapping from cells to number of events
+ in those cells, return a list of numbers, of length equal to the given
+ list of cells, representing the running total of number of events in all
+ cells up to that point in the list.
+This is a very useful function for measuring the hit rate of a given
+ algorithm. An algorithm should output a ranked list of cells, so then we
+ can use this function to see how many events the algorithm would have
+ detected, given any coverage rate (where the coverage rate corresponds to
+ how far along the list we are permitted to search).
+"""
 def getHitRateList(sorted_cells, cell_hit_map):
     running_total = 0
     hit_rate_list = []
@@ -233,12 +140,23 @@ def getHitRateList(sorted_cells, cell_hit_map):
 
 
 
-
-
-
-
-
-
+"""
+Purpose:
+    Generate a map that displays the locations of a given set of events
+Input:
+    points =
+    masked_grid = Grid object with a mask
+    polygon = 
+    title = desired title for output grid
+    sizex = width of output grid
+            default = 8
+    sizey = height of output grid
+            default = sizex
+Output:
+    Display a graph of the region (light blue) with overlaid cell squares
+    (black border) and locations of events (red, plus signs), with xy axes as
+    geographic coordinates.
+"""
 def plotPointsOnGrid(points, masked_grid, polygon, title=None, sizex=8, sizey=None):
     
     if sizey == None:
@@ -265,7 +183,9 @@ def plotPointsOnGrid(points, masked_grid, polygon, title=None, sizex=8, sizey=No
 
 
 
-
+"""
+plotPointsOnColorGrid
+"""
 
 def plotPointsOnColorGrid(polygon, 
                           points, 
@@ -309,11 +229,9 @@ def plotPointsOnColorGrid(polygon,
 
 
 
-
-
-
-
-
+"""
+sortCellsByRiskMatrix
+"""
 
 def sortCellsByRiskMatrix(cells, risk_matrix):
     # For each cellcoord, get its risk from the risk matrix
@@ -328,11 +246,16 @@ def sortCellsByRiskMatrix(cells, risk_matrix):
     return cells_risksort
 
 
-# sorted_cell_list = output from sortCellsByRiskMatrix, e.g.
-# cutoff_list = proportions for tiered results, like [0.01,0.02,0.05,0.1]
-# score_list = scores to assign to each tier
-#               length should be 1 more than cutoff list
-#               by default, evenly spaced from 0 to 1
+
+"""
+rankMatrixFromSortedCells
+
+ sorted_cell_list = output from sortCellsByRiskMatrix, e.g.
+ cutoff_list = proportions for tiered results, like [0.01,0.02,0.05,0.1]
+ score_list = scores to assign to each tier
+               length should be 1 more than cutoff list
+               by default, evenly spaced from 0 to 1
+"""
 def rankMatrixFromSortedCells(masked_matrix, 
                               sorted_cell_list, 
                               cutoff_list, 
@@ -377,19 +300,9 @@ def rankMatrixFromSortedCells(masked_matrix,
 
 
 
-
-
-
-
-
-
-
-
-
-
-
-
-
+"""
+runPhsModel
+"""
 def runPhsModel(training_data, grid, cutoff_time, time_unit, dist_unit, time_bandwidth, dist_bandwidth, weight="linear"):
     
     
@@ -459,30 +372,18 @@ def runPhsModel(training_data, grid, cutoff_time, time_unit, dist_unit, time_ban
 
 
 
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-def loadGenericData(filepath, crime_type_set = {"BURGLARY"}, date_format_csv = "%m/%d/%Y %I:%M:%S %p", epsg = None, proj=None, longlat=True, infeet=False):
+"""
+loadGenericData
+"""
+def loadGenericData(filepath, crime_type_set = {"BURGLARY"}, date_format_csv = "%m/%d/%Y %I:%M:%S %p", epsg = None, proj=None, longlat=True, infeet=False, has_header=True):
     
     # Note: Data is expected in a csv file with the following properties:
     # Row 0 = Header
     # Col 0 = Date/time
-    # Col 1 = Longitude
-    # Col 2 = Latitude
+    # Col 1 = Longitude (or eastings)
+    # Col 2 = Latitude (or northings)
     # Col 3 = Crime type
-    # Col 4 = Location type (optional)
+    # Col 4 = Location type (optional, currently not implemented)
     
     # EPSGs:
     # 3435 or 4326 or 3857 or...? = Chicago
@@ -510,7 +411,8 @@ def loadGenericData(filepath, crime_type_set = {"BURGLARY"}, date_format_csv = "
     data = []
     with open(filepath) as f:
         csvreader = csv.reader(f)
-        _ = next(csvreader)
+        if has_header:
+            _ = next(csvreader)
         for row in csvreader:
             # Confirm crime type is one we're interested in
             crime_type = row[3].strip()
@@ -544,10 +446,19 @@ def loadGenericData(filepath, crime_type_set = {"BURGLARY"}, date_format_csv = "
 
 
 
+
+
+
+
+
+
+# Variables with "chktime" are used to start checking the timing
+# Variables with "tkntime" hold the amount of time taken
+
 # Overall timing
 chktime_overall = time.time()
 
-#### Data parameters
+#### Declare data parameters
 chktime_decparam = time.time()
 print("Declaring parameters...")
 
@@ -583,16 +494,16 @@ date_today_str = getSixDigitDate(date_today)
 
 ###
 # Input parameters for the user to provide
+# (Unimplemented parameters are commented out)
 
 # Dataset name (to be included in name of output file)
 dataset_name= "chicago"
 # Crime types
 #!!!  May want to change this to be different for train vs test?
 crime_type_set = {"BURGLARY"}
-crime_types_printable = "_".join(sorted(crime_type_set))
 #crime_type_set_sweep = [{"BURGLARY"}] # if doing a sweep over different sets
 # Size of grid cells
-#cell_width_sweep = [100]
+#cell_width_sweep = [100] # if doing a sweep over different cell sizes
 cell_width = 100
 # Input csv file name
 in_csv_file_name = "chi_all_s_BURGLARY_RES_010101_190101_stdXY.csv"
@@ -608,7 +519,8 @@ test_date_range = "1W"
 train_len = "8W"
 # Length of testing data
 test_len = "1W"
-# Time step between different experiments
+# Time step offset between different experiments
+# (If you want non-overlapping, then set test_date_step = test_len)
 #test_date_step = "1D"
 test_date_step = test_len
 # Coverage rates to test
@@ -625,12 +537,11 @@ geojson_file_name = "Chicago_South_Side_2790.geojson"
 
 
 
-discrete_colors = matplotlib.colors.ListedColormap(['red', 'yellow', 'green', 'blue', 'white'])
-
-
 ###
 # Derived parameters
 
+# Printable string of crime types, concatenated by "_" if necessary
+crime_types_printable = "_".join(sorted(crime_type_set))
 # Full path for input csv file
 in_csv_full_path = os.path.join(datadir, in_csv_file_name)
 # Nicely-formatted string of test date
@@ -638,18 +549,24 @@ earliest_test_date_str = "".join(earliest_test_date.split("-"))[2:]
 # Latest start of a test data set, calculated from earliest and length
 latest_test_date = generateLaterDate(earliest_test_date, test_date_range)
 # List of all experiment dates
-start_test_list = generateDateRange(earliest_test_date, latest_test_date, test_date_step)
+start_test_list = generateDateRange(earliest_test_date, \
+                                    latest_test_date, \
+                                    test_date_step)
 # Number of different experiment dates
 total_num_exp_dates = len(start_test_list)
 # Output csv file name
-out_csv_file_name = "results_{}_{}_{}_{}_{}.csv".format(date_today_str, dataset_name, earliest_test_date_str, test_date_range, test_date_step)
+out_csv_file_name = "results_{}_{}_{}_{}_{}.csv".format(date_today_str, \
+                                                        dataset_name, \
+                                                        earliest_test_date_str, \
+                                                        test_date_range, \
+                                                        test_date_step)
 # Full path for output csv file
 out_csv_full_path = os.path.join(datadir, out_csv_file_name)
 # Full path for geojson file
 geojson_full_path = os.path.join(datadir, geojson_file_name)
 
 ###
-## Not sure if we need any of this
+## Not sure if we'll need any of these parameters that had been used previously
 #chicago_side = "South"
 #chicago_load_type = "snapshot"
 #if "all" in chicago_file_name:
@@ -660,6 +577,7 @@ geojson_full_path = os.path.join(datadir, geojson_file_name)
 
 
 print("...declared parameters.")
+tkntime_decparam = time.time() - chktime_decparam
 
 
 # Open output csv file for writing, write header row
@@ -671,9 +589,11 @@ with open(out_csv_full_path, "w") as csvf:
     
     
     
-    
     # If we were to do a "crime type sweep", that would go here.
     # But probably simpler to just re-run with a new crime type set instead.
+    # Unless we want to actively combine results within this script?
+    
+    
     
     
     
@@ -682,7 +602,7 @@ with open(out_csv_full_path, "w") as csvf:
     print("Obtaining full data set and region...")
     
     #!!! Need to change standardization pre-processing so that this input
-    #     is always Eastings/Northings and in meters
+    #     is always Eastings/Northings, and in meters
     points_crime = loadGenericData(in_csv_full_path, 
                                    crime_type_set=crime_type_set, 
                                    longlat=False, 
@@ -702,6 +622,7 @@ with open(out_csv_full_path, "w") as csvf:
                                                             yoffset=0)
                                                    )
     
+    # Get "mesh info" of that grid, which is useful for displaying the map
     masked_grid_mesh = masked_grid_region.mesh_info()
     
     
@@ -709,26 +630,28 @@ with open(out_csv_full_path, "w") as csvf:
     cellcoordlist_region = getRegionCells(masked_grid_region)
     
     print("...obtained full data set and region.")
-    print(f'Time taken to obtain data: {time.time() - chktime_obtain_data}')
+    tkntime_obtain_data = time.time() - chktime_obtain_data
+    print(f'Time taken to obtain data: {tkntime_obtain_data}')
     
     
     
+    # How frequently to display a print statement showing the experiment number
+    print_exp_freq = 5
     
-    
-    # Log of how long an experiment takes to run
+    # Log of how long each experiment takes to run
     exp_times = []
     
     
-    
-    # PARAM: Start date
+    # Each start_test time in the generated list defines the time period for
+    #  an experiment (or multiple experiments)
     for exp_date_index, start_test in enumerate(start_test_list):
         
-        chktime_exp_start = time.time()
+        chktime_exp = time.time()
         
-        if exp_date_index % 5 == 0:
+        if exp_date_index % print_exp_freq == 0:
             print(f"Running experiment {exp_date_index+1}/{total_num_exp_dates}...")
         
-        # Declare time ranges of training and testing data
+        # Compute time ranges of training and testing data
         end_train = start_test
         start_train = generateEarlierDate(end_train, train_len)
         end_test = generateLaterDate(start_test, test_len)
@@ -739,7 +662,6 @@ with open(out_csv_full_path, "w") as csvf:
         points_crime_region_train = getTimedPointsInTimeRange(points_crime_region, 
                                                               start_train, 
                                                               end_train)
-        
         # Count how many crimes there were in this training data set
         num_crimes_train = len(points_crime_region_train.timestamps)
         
@@ -751,6 +673,7 @@ with open(out_csv_full_path, "w") as csvf:
         # Count how many crimes there were in this test data set
         num_crimes_test = len(points_crime_region_test.timestamps)
         
+        
         # Count the number of crimes per cell in test data
         #  This is used for evaluation and also for the "ideal" model
         cells_testcrime_ctr = countPointsPerCell(points_crime_region_test, 
@@ -759,7 +682,6 @@ with open(out_csv_full_path, "w") as csvf:
         
         print(f"num_crimes_train: {num_crimes_train}")
         print(f"num_crimes_test: {num_crimes_test}")
-        print(f"time spent on exp: {time.time()-chktime_exp_start}")
         
         
         
@@ -784,29 +706,6 @@ with open(out_csv_full_path, "w") as csvf:
         
         
         
-        
-        # Model implementation here
-        
-        
-        phs_data_matrix = runPhsModel(training_data=points_crime_region_train, 
-                                   grid=masked_grid_region, 
-                                   cutoff_time=start_test, 
-                                   time_unit=np.timedelta64(1, "W"), 
-                                   dist_unit=100, 
-                                   time_bandwidth=np.timedelta64(4, "W"), 
-                                   dist_bandwidth=400, 
-                                   weight="linear")
-        #phs_data_matrix = masked_grid_region.mask_matrix(phs_data_matrix)
-        
-        
-        plotPointsOnColorGrid(polygon = region_polygon, 
-                              points = points_crime_region_train, 
-                              mesh_info = masked_grid_mesh, 
-                              value_matrix = phs_data_matrix, 
-                              cmap_choice = yellow_to_red, 
-                              title="PHS map", 
-                              sizex=10, 
-                              sizey=10)
         
         
         
@@ -834,6 +733,37 @@ with open(out_csv_full_path, "w") as csvf:
                               title="Naive map", 
                               sizex=10, 
                               sizey=10)
+        
+        
+        
+        
+        
+        # Still need to replace hard-coded parameters in this call here
+        phs_data_matrix = runPhsModel(training_data=points_crime_region_train, 
+                                   grid=masked_grid_region, 
+                                   cutoff_time=start_test, 
+                                   time_unit=np.timedelta64(1, "W"), 
+                                   dist_unit=cell_width, 
+                                   time_bandwidth=np.timedelta64(4, "W"), 
+                                   dist_bandwidth= 4 * cell_width, 
+                                   # ^^^ That should be set as a param
+                                   weight="classic")
+                                   #weight="linear")
+        #phs_data_matrix = masked_grid_region.mask_matrix(phs_data_matrix)
+        
+        
+        plotPointsOnColorGrid(polygon = region_polygon, 
+                              points = points_crime_region_train, 
+                              mesh_info = masked_grid_mesh, 
+                              value_matrix = phs_data_matrix, 
+                              cmap_choice = yellow_to_red, 
+                              title="PHS map", 
+                              sizex=10, 
+                              sizey=10)
+        
+        
+        
+        
         
         
         
@@ -876,6 +806,26 @@ with open(out_csv_full_path, "w") as csvf:
         
         
         
+        sorted_cells_ideal = sorted(cellcoordlist_region, 
+                                    key=lambda x:cells_testcrime_ctr[x], 
+                                    reverse=True)
+        
+        
+        
+        ideal_rank_matrix = rankMatrixFromSortedCells(masked_grid_region, 
+                                                      sorted_cells_ideal, 
+                                                      coverage_bounds)
+        
+        plotPointsOnColorGrid(polygon = region_polygon, 
+                              #points = points_crime_region_train, 
+                              points = points_crime_region_test, 
+                              mesh_info = masked_grid_mesh, 
+                              value_matrix = ideal_rank_matrix, 
+                              cmap_choice = discrete_colors, 
+                              title="Ideal map, ranked by coverage", 
+                              sizex=10, 
+                              sizey=10)
+        
         
         
         sys.exit(0)
@@ -885,21 +835,7 @@ with open(out_csv_full_path, "w") as csvf:
         
         
         
-        
-        
-        
-        
-        
-        # Get results from naivecount model
-        #model_name = "naivecount"
-        #sorted_cells = runModelAndSortCells(model_name, args_to_use)
-        sorted_cells = sorted(cellcoordlist_region, 
-                              key=lambda x:cells_testcrime_ctr[x], 
-                              reverse=True)
-        
-        
-        
-        hit_rate_list = getHitRateList(sorted_cells, cells_testcrime_ctr)
+        #hit_rate_list = getHitRateList(sorted_cells, cells_testcrime_ctr)
         
         
         
@@ -908,10 +844,9 @@ with open(out_csv_full_path, "w") as csvf:
         
         
         
-        
-        new_exp_time = time.time()-chktime_exp_start
-        print(f"time spent on exp: {new_exp_time}")
-        exp_times.append(new_exp_time)
+        tkn_time_exp = time.time()-chktime_exp
+        print(f"time spent on exp: {tkn_time_exp}")
+        exp_times.append(tkn_time_exp)
         
     
     

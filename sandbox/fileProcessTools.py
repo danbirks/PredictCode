@@ -3,6 +3,12 @@
 Created on Wed Jun 26 14:22:19 2019
 
 @author: lawdfo
+
+Purpose:
+    Some generally useful functions for processing the relevant data files.
+
+
+
 """
 
 import numpy as np
@@ -19,6 +25,19 @@ import open_cp.geometry
 import open_cp.sources.chicago as chicago
 from open_cp.data import TimedPoints
 
+
+
+"""
+isSubsetFile
+Purpose:
+    Given 2 files, check whether each line of the first (shorter) file is
+    present in the longer file, with order preserved but possibly with other
+    lines interspersed throughout. This was useful at one point for checking
+    that certain data subsets were being generated correctly.
+Input: path to shorter file, path to longer file
+Output: boolean of whether shorter is subset of longer.
+        if false, also return earliest line in shorter that is not in longer.
+"""
 def isSubsetFile(shortfile, longfile):
     with open(shortfile) as sf:
         with open(longfile) as lf:
@@ -35,6 +54,10 @@ def isSubsetFile(shortfile, longfile):
                 return False, shortline
             return True, None
 
+"""
+combineNaivePhsCsv
+
+"""
 def combineNaivePhsCsv(naivefile, phsfile, newfile="temp.csv"):
     
     naivedata = dict()
@@ -64,6 +87,11 @@ def combineNaivePhsCsv(naivefile, phsfile, newfile="temp.csv"):
     sys.exit(0)
 
 
+
+"""
+loadGenericData
+
+"""
 def loadGenericData(filepath, crime_type_set = {"BURGLARY"}, date_format_csv = "%m/%d/%Y %I:%M:%S %p", epsg = None, proj=None, longlat=True, infeet=False):
     
     # Note: Data is expected in a csv file with the following properties:
@@ -100,7 +128,8 @@ def loadGenericData(filepath, crime_type_set = {"BURGLARY"}, date_format_csv = "
     data = []
     with open(filepath) as f:
         csvreader = csv.reader(f)
-        header = next(csvreader)
+        # Remove header
+        _ = next(csvreader)
         for row in csvreader:
             # Confirm crime type is one we're interested in
             crime_type = row[3].strip()
