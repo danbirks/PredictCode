@@ -106,7 +106,7 @@ class ClassicWeightNormalised(Weight):
 
 
 class LinearWeightNormalised(Weight):
-    """Linear weight, :math:`(1-(d/bs))(1-(t/tb))` where :math:`d` is
+    """Linear weight, :math:`(1-(d/sb))(1-(t/tb))` where :math:`d` is
     distance and :math:`t` is time and :math:`sb` is space
     bandwidth and :math:`tb` is time bandwidth.  Default 
     units are "grid cells" and "weeks", respectively.

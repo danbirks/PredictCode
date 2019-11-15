@@ -21,8 +21,9 @@ import csv
 import numpy as np
 import time
 
-from collections import Counter
+from collections import Counter, defaultdict
 from itertools import product
+from copy import deepcopy
 
 import geopandas as gpd
 import matplotlib.pyplot as plt
@@ -63,7 +64,8 @@ from crimeRiskTimeTools import generateLaterDate, \
                                generateEarlierDate, \
                                generateDateRange, \
                                getTimedPointsInTimeRange, \
-                               getSixDigitDate
+                               getSixDigitDate, \
+                               shorthandToTimeDelta
 
 
 
@@ -122,19 +124,22 @@ getHitRateList
 Purpose:
 Given a sorted list of cells, and a mapping from cells to number of events
  in those cells, return a list of numbers, of length equal to the given
- list of cells, representing the running total of number of events in all
+ list of cells +1, representing the running total of number of events in all
  cells up to that point in the list.
 This is a very useful function for measuring the hit rate of a given
  algorithm. An algorithm should output a ranked list of cells, so then we
  can use this function to see how many events the algorithm would have
  detected, given any coverage rate (where the coverage rate corresponds to
  how far along the list we are permitted to search).
+Note that the list starts with 0, in the event that the coverage is so low
+ that no cells are checked. If the coverage allows you to check n cells, then
+ the hit rate will be the value at index n (0-up).
 """
 def getHitRateList(sorted_cells, cell_hit_map):
     running_total = 0
-    hit_rate_list = []
+    hit_rate_list = [0]
     for cell in sorted_cells:
-        running_total += cell_hit_map[cell]
+        running_total += cell_hit_map[tuple(cell)]
         hit_rate_list.append(running_total)
     return hit_rate_list
 
@@ -157,7 +162,13 @@ Output:
     (black border) and locations of events (red, plus signs), with xy axes as
     geographic coordinates.
 """
-def plotPointsOnGrid(points, masked_grid, polygon, title=None, sizex=8, sizey=None):
+def plotPointsOnGrid(points, 
+                     masked_grid, 
+                     polygon, 
+                     title=None, 
+                     sizex=10, 
+                     sizey=None, 
+                     out_img_file_path=None):
     
     if sizey == None:
         sizey = sizex
@@ -180,6 +191,10 @@ def plotPointsOnGrid(points, masked_grid, polygon, title=None, sizex=8, sizey=No
         ax.set_title(title)
     
     
+    if out_img_file_path != None:
+        fig.savefig(out_img_file_path)
+    
+    return
 
 
 
@@ -193,11 +208,12 @@ def plotPointsOnColorGrid(polygon,
                           value_matrix, 
                           cmap_choice, 
                           title=None, 
-                          sizex=8, 
+                          sizex=10, 
                           sizey=None, 
                           edge_color = "black", 
                           point_color = "black", 
-                          point_shape = "+"):
+                          point_shape = "+", 
+                          out_img_file_path = None):
     
     if sizey == None:
         sizey = sizex
@@ -225,6 +241,9 @@ def plotPointsOnColorGrid(polygon,
     if title != None:
         ax.set_title(title)
     
+    if out_img_file_path != None:
+        fig.savefig(out_img_file_path)
+    
     return
 
 
@@ -244,6 +263,21 @@ def sortCellsByRiskMatrix(cells, risk_matrix):
                             key=lambda x:cellcoord_risk_dict[x], \
                             reverse=True)
     return cells_risksort
+
+
+
+"""
+hitRatesFromHitList
+"""
+def hitRatesFromHitList(hit_rate_list, 
+                        coverage_rate, 
+                        num_cells, 
+                        num_crimes_test):
+    num_hits = hit_rate_list[int(coverage_rate * num_cells)]
+    pct_hits = 0
+    if num_crimes_test>0:
+        pct_hits = num_hits / num_crimes_test
+    return num_hits, pct_hits
 
 
 
@@ -300,8 +334,59 @@ def rankMatrixFromSortedCells(masked_matrix,
 
 
 
+
+"""
+runNaiveModel
+
+Runs the naive model in which we simply count the number of events in the
+ training data per cell.
+Returns an intensity matrix, where each cell of the (masked) grid is assigned
+ a risk score (which is equal to the number of events in the training data).
+This is also used for the ideal model, using testing data as training data.
+
+training_data   : 
+grid            : 
+"""
+def runNaiveModel(training_data, grid):
+    # Count the number of crimes per cell in training data
+    cells_traincrime_ctr = countPointsPerCell(training_data, grid)
+    
+    naive_data_matrix = np.zeros([grid.yextent, 
+                                  grid.xextent])
+    naive_data_matrix = grid.mask_matrix(naive_data_matrix)
+    for c in cells_traincrime_ctr:
+        naive_data_matrix[c] = cells_traincrime_ctr[c]
+    
+    return naive_data_matrix
+
+def runRandomModel(grid, rand_seed):
+    
+    np.random.seed(seed=rand_seed)
+    random_data_matrix = np.random.rand(grid.yextent, 
+                                        grid.xextent)
+    random_data_matrix = grid.mask_matrix(random_data_matrix)
+    
+    return random_data_matrix
+
+
 """
 runPhsModel
+
+Runs the Prospective Hotspotting model.
+Relies on importing open_cp.prohotspot as phs.
+Returns an intensity matrix, where each cell of the (masked) grid is assigned
+ a risk score.
+
+training_data   : 
+grid            : 
+cutoff_time     : 
+time_unit       : basic unit for time (examples: 3D, 2W, 6M, 1Y)
+dist_unit       : basic unit for distance, in meters (ex: 100)
+time_bandwidth  : multiple of time_unit used for bandwidth, as an integer
+dist_bandwidth  : multiple of dist_unit used for bandwidth, as an integer
+weight          : "linear" or "classic"
+                  "linear" = use phs.LinearWeightNormalised
+                  "classic" = use phs.ClassicWeightNormalised
 """
 def runPhsModel(training_data, grid, cutoff_time, time_unit, dist_unit, time_bandwidth, dist_bandwidth, weight="linear"):
     
@@ -355,20 +440,72 @@ def runPhsModel(training_data, grid, cutoff_time, time_unit, dist_unit, time_ban
     
     
     
-    # We might need to mask the risk to the relevant region?
-    # Not sure if there's a reason we wouldn't want it masked...
-    # But then we would need to pass in masked_grid_region to this function?
-    # Or maybe it's sufficient to do it later, if we even need it at all?
-    #phs_grid_risk.mask_with(masked_grid_region)
-    
-    
-    #return phs_grid_risk.intensity_matrix
+    # Mask the risk matrix to the relevant region, return it
     return grid.mask_matrix(phs_grid_risk.intensity_matrix)
     
-    # Sort cellcoords by risk in intensity matrix, highest risk first
-    #grid_cells = getRegionCells(grid=grid)
-    #return sortCellsByRiskMatrix(grid_cells, phs_grid_risk_matrix)
+
+
+"""
+saveModelResultMaps
+After running a model, save visualisations of how it mapped risk, both as a
+general heat map and in different bins of coverage.
+"""
+def saveModelResultMaps(model_name, 
+                        data_matrix, 
+                        rank_matrix, 
+                        exp_num, 
+                        file_core, 
+                        filedir, 
+                        polygon, 
+                        points_to_map, 
+                        mesh_info, 
+                        ):
     
+    
+    # Define file names
+    
+    img_file_heat_name = "_".join(["heatmap", 
+                                   model_name, 
+                                   file_core])
+    img_file_heat_name += ".png"
+    img_file_heat_fullpath = os.path.join(filedir, img_file_heat_name)
+    
+    
+    img_file_cov_name = "_".join(["covmap", 
+                                   model_name, 
+                                   img_file_core])
+    img_file_cov_name += ".png"
+    img_file_cov_fullpath = os.path.join(datadir, img_file_cov_name)
+    
+    
+    heat_title = f"{model_name.capitalize()} heat map {exp_num}"
+    cov_title = f"{model_name.capitalize()} coverage map {exp_num}"
+    
+    # Save risk heat map
+    plotPointsOnColorGrid(polygon = polygon, 
+                          points = points_to_map, 
+                          mesh_info = mesh_info, 
+                          value_matrix = data_matrix, 
+                          cmap_choice = yellow_to_red, 
+                          title=heat_title, 
+                          sizex=10, 
+                          sizey=10, 
+                          out_img_file_path = img_file_heat_fullpath)
+    
+    # Save coverage map
+    plotPointsOnColorGrid(polygon = polygon, 
+                          points = points_to_map, 
+                          mesh_info = mesh_info, 
+                          value_matrix = rank_matrix, 
+                          cmap_choice = discrete_colors, 
+                          title=cov_title, 
+                          sizex=10, 
+                          sizey=10, 
+                          out_img_file_path = img_file_cov_fullpath)
+    
+    return
+
+
 
 
 
@@ -469,37 +606,56 @@ print("Declaring parameters...")
 datadir = os.path.join("..", "..", "Data")
 # Header for output file
 result_info_header = [
-                                "dataset", 
-                                "event_types",
-                                "cell_width", 
-                                "eval_date", 
-                                "train_len", 
-                                "test_len", 
-                                "coverage_rate", 
-                                "test_events", 
-                                "hit_count", 
-                                "hit_pct", 
-                                "model", 
-                                "rand_seed", 
-                                "rhs_bandwidth", 
-                                "phs_time_unit", 
-                                "phs_time_band", 
-                                "phs_dist_unit", 
-                                "phs_dist_band", 
-                                "phs_weight", 
-                                ]
+                        "dataset", 
+                        "event_types",
+                        "cell_width", 
+                        "eval_date", 
+                        "train_len", 
+                        "test_len", 
+                        "coverage_rate", 
+                        "test_events", 
+                        "hit_count", 
+                        "hit_pct", 
+                        "model", 
+                        "rand_seed", 
+                        "rhs_bandwidth", 
+                        "phs_time_unit", 
+                        "phs_time_band", 
+                        "phs_dist_unit", 
+                        "phs_dist_band", 
+                        "phs_weight", 
+                        ]
+# Columns risk_MODEL and rank_MODEL for each.model will be appended too
+risk_info_header = [
+                        "dataset", 
+                        "event_types",
+                        "cell_width", 
+                        "eval_date", 
+                        "train_len", 
+                        "test_len", 
+                        "rownum", 
+                        "colnum", 
+                        "easting", 
+                        "northing" ]
+
 date_today = datetime.date.today()
 date_today_str = getSixDigitDate(date_today)
 
+recognised_models = ["random", "naive", "phs", "ideal"]
 
 ###
 # Input parameters for the user to provide
 # (Unimplemented parameters are commented out)
 
+
+
+
+
 # Dataset name (to be included in name of output file)
 dataset_name= "chicago"
 # Crime types
 #!!!  May want to change this to be different for train vs test?
+#!!!  May want to use multiple sets of types, then combine results?
 crime_type_set = {"BURGLARY"}
 #crime_type_set_sweep = [{"BURGLARY"}] # if doing a sweep over different sets
 # Size of grid cells
@@ -511,7 +667,7 @@ in_csv_file_name = "chi_all_s_BURGLARY_RES_010101_190101_stdXY.csv"
 date_format_csv = "%m/%d/%Y %I:%M:%S %p"
 #!!! Should actually force that format when standardizing csv files!!!
 #!!! Also change "infeet" issues at standardizing stage too!!!
-# Of all planned experiments, earliest start of a test data set
+# Of all planned experiments, earliest start of a TEST (not train) data set
 earliest_test_date = "2003-01-01"
 # Time between earliest experiment and latest experiment
 test_date_range = "1W"
@@ -530,10 +686,50 @@ coverage_bounds = [0.01, 0.02, 0.05, 0.10]
 geojson_file_name = "Chicago_South_Side_2790.geojson"
 #geojson_file_name = "Durham_27700.geojson"
 
-# There are more parameters to include regarding the models to run
-#  but for now let's just try to display the data itself
+# How frequently to display a print statement showing the experiment number
+print_exp_freq = 5
+
+
 # Predictive models to run
-# models_to_run = ["naivecount","phs"]
+models_to_run = ["random","naive","phs","ideal"]
+
+num_random = 3
+
+model_param_dict = dict()
+model_param_dict["ideal"] = [()]
+model_param_dict["naive"] = [()]
+
+# Param list for Random model.
+#  For example, if 4, param list is [(0,), (1,), (2,), (3,)]
+model_param_dict["random"] = list(product(range(num_random)))
+
+
+
+# Param list for PHS model.
+phs_time_units = ["1W"]
+phs_time_bands = ["4W"]
+phs_dist_units = [100]
+phs_dist_bands = [400]
+#phs_weights = ["linear"]
+phs_weights = ["classic"]
+model_param_dict["phs"] = list(product(
+                            phs_time_units, 
+                            phs_time_bands, 
+                            phs_dist_units, 
+                            phs_dist_bands, 
+                            phs_weights))
+
+
+
+
+
+
+
+
+
+
+
+
 
 
 
@@ -554,19 +750,43 @@ start_test_list = generateDateRange(earliest_test_date, \
                                     test_date_step)
 # Number of different experiment dates
 total_num_exp_dates = len(start_test_list)
-# Output csv file name
-out_csv_file_name = "results_{}_{}_{}_{}_{}.csv".format(date_today_str, \
-                                                        dataset_name, \
-                                                        earliest_test_date_str, \
-                                                        test_date_range, \
-                                                        test_date_step)
-# Full path for output csv file
-out_csv_full_path = os.path.join(datadir, out_csv_file_name)
+# If number of experiment dates <= 2, declare this run to be short.
+# This means that for each experiment date, we will create various plots:
+#   - training locations
+#   - test locations
+#   - heat maps for each experiment
+#   - coverage maps for each experiment
+# In this case we might also save off the risk scores computed for each cell
+#  by each experiment, and relative rankings of those cells.
+#  (But that part isn't implemented yet.)
+run_is_short = False
+if total_num_exp_dates <= 2:
+    run_is_short = True
+# String that uniquely identifies this run within a file name
+file_name_core = "_".join([date_today_str, \
+                           dataset_name, \
+                           earliest_test_date_str, \
+                           test_date_range, \
+                           test_date_step])
+# Output csv file name for results summary
+out_csv_file_name_results = f"results_{file_name_core}.csv"
+# Output csv file name for detailed risk info if run is short
+out_csv_file_name_risks = f"risks_{file_name_core}.csv"
+# Full path for output csv file of results
+out_csv_results_full_path = os.path.join(datadir, out_csv_file_name_results)
+# Full path for output csv file of risk info if run is short
+out_csv_risks_full_path = os.path.join(datadir, out_csv_file_name_risks)
 # Full path for geojson file
 geojson_full_path = os.path.join(datadir, geojson_file_name)
+# Append risk_MODEL and rank_MODEL to risk_info_header for each model
+if run_is_short:
+    for model_name in models_to_run:
+        risk_info_header.append(f"risk_{model_name}")
+        risk_info_header.append(f"rank_{model_name}")
+
 
 ###
-## Not sure if we'll need any of these parameters that had been used previously
+## Not sure if we need any of these parameters that had been used previously
 #chicago_side = "South"
 #chicago_load_type = "snapshot"
 #if "all" in chicago_file_name:
@@ -581,9 +801,9 @@ tkntime_decparam = time.time() - chktime_decparam
 
 
 # Open output csv file for writing, write header row
-with open(out_csv_full_path, "w") as csvf:
-    writer = csv.writer(csvf, delimiter=",", lineterminator="\n")
-    writer.writerow(result_info_header)
+with open(out_csv_results_full_path, "w") as csvf:
+    results_writer = csv.writer(csvf, delimiter=",", lineterminator="\n")
+    results_writer.writerow(result_info_header)
     
     
     
@@ -628,6 +848,9 @@ with open(out_csv_full_path, "w") as csvf:
     
     # Get tuple of all cells in gridded region
     cellcoordlist_region = getRegionCells(masked_grid_region)
+    # Obtain number of cells in the grid that contain relevant geometry
+    # (i.e., not the full rectangular grid, only relevant cells)
+    num_cells_region = len(cellcoordlist_region)
     
     print("...obtained full data set and region.")
     tkntime_obtain_data = time.time() - chktime_obtain_data
@@ -635,11 +858,10 @@ with open(out_csv_full_path, "w") as csvf:
     
     
     
-    # How frequently to display a print statement showing the experiment number
-    print_exp_freq = 5
     
     # Log of how long each experiment takes to run
     exp_times = []
+    
     
     
     # Each start_test time in the generated list defines the time period for
@@ -657,7 +879,6 @@ with open(out_csv_full_path, "w") as csvf:
         end_test = generateLaterDate(start_test, test_len)
         
         
-        
         # Obtain training data
         points_crime_region_train = getTimedPointsInTimeRange(points_crime_region, 
                                                               start_train, 
@@ -673,169 +894,231 @@ with open(out_csv_full_path, "w") as csvf:
         # Count how many crimes there were in this test data set
         num_crimes_test = len(points_crime_region_test.timestamps)
         
-        
-        # Count the number of crimes per cell in test data
-        #  This is used for evaluation and also for the "ideal" model
+        # Count the number of crimes per cell in test data.
+        #  This is used for evaluation.
         cells_testcrime_ctr = countPointsPerCell(points_crime_region_test, 
                                                  masked_grid_region)
         
         
-        print(f"num_crimes_train: {num_crimes_train}")
-        print(f"num_crimes_test: {num_crimes_test}")
+        if exp_date_index % print_exp_freq == 0:
+            print(f"num_crimes_train: {num_crimes_train}")
+            print(f"num_crimes_test: {num_crimes_test}")
+        
+        
+        
+        # If we have few experiments (1 or 2 dates), then we create and save
+        #  map visualisations of the data and models' results.
+        if run_is_short:
+            
+            # Make image file names for training and testing data
+            
+            img_file_core = "_".join([
+                                    date_today_str, 
+                                    str(exp_date_index), 
+                                    getSixDigitDate(start_test), 
+                                    train_len, 
+                                    test_len, 
+                                    ])
+            
+            img_file_train_name = f"trainmap_{img_file_core}.png"
+            img_file_test_name = f"testmap_{img_file_core}.png"
+            img_file_train_full_path = os.path.join(datadir, 
+                                                    img_file_train_name)
+            img_file_test_full_path = os.path.join(datadir, 
+                                                   img_file_test_name)
+            
+            # Plot training data on plain grid
+            plotPointsOnGrid(points_crime_region_train, 
+                             masked_grid_region, 
+                             region_polygon, 
+                             title=f"Train data {exp_date_index}", 
+                             sizex=10, 
+                             sizey=10, 
+                             out_img_file_path=img_file_train_full_path)
+            
+            # Plot testing data on plain grid
+            plotPointsOnGrid(points_crime_region_test, 
+                             masked_grid_region, 
+                             region_polygon, 
+                             title=f"Test data {exp_date_index}", 
+                             sizex=10, 
+                             sizey=10, 
+                             out_img_file_path=img_file_test_full_path)
+        
+        
+        
+        # A "data_matrix" contains a risk score for each cell in the grid
+        #  (within the masked region). These scores can then be used to rank
+        #  the cells by risk. Note that different models use different scoring
+        #  systems, so the scores from different data_matrices are not
+        #  directly comparable, unless some normalisation process is used.
+        
+        # A "sorted_cells" list is a ranked list of cells based on the
+        #  previously computed data_matrix. Ties are currently broken by
+        #  selecting southernmost cells, then westernmost cells.
+        
+        # A "rank_matrix" is a matrix object where each cell is associated
+        #  with its ranking from the sorted_cells list. This is useful for
+        #  displaying a map of which cells are covered by various coverage
+        #  thresholds.
+        
+        
+        
+        # Result objects for various experiments
+        # model_name -> exp_num
+        data_matrix_dict = defaultdict(list)
+        sorted_cells_dict = defaultdict(list)
+        rank_matrix_dict = defaultdict(list)
+        hit_rate_list_dict = defaultdict(list)
         
         
         
         
         
-        # Plot training data on plain grid
-        plotPointsOnGrid(points_crime_region_train, 
-                         masked_grid_region, 
-                         region_polygon, 
-                         title=f"Train data {exp_date_index+1}", 
-                         sizex=8, 
-                         sizey=8)
+        for model_name in models_to_run:
+            if model_name not in recognised_models:
+                print("Error!")
+                print(f"Unrecognised model name: {model_name}")
+                print(f"Recognised models are: {recognised_models}")
+                print("Skipping that model.")
+                continue
+            
+            model_params = model_param_dict[model_name]
+            
+            
+            # Generate the data matrix based on the particular model
+            if model_name == "random":
+                for rand_seed in [x[0] for x in model_params]:
+                    data_matrix_dict[model_name].append(deepcopy(
+                            runRandomModel(
+                                    grid=masked_grid_region, 
+                                    rand_seed = rand_seed
+                                    )
+                            ))
+            elif model_name == "naive":
+                data_matrix_dict[model_name].append(deepcopy(runNaiveModel(
+                        training_data=points_crime_region_train, 
+                        grid=masked_grid_region
+                        )))
+            elif model_name == "phs":
+                for params_combo in model_params:
+                    # Cast PHS parameters into proper data types
+                    phs_time_unit = shorthandToTimeDelta(params_combo[0])
+                    phs_time_band = shorthandToTimeDelta(params_combo[1])
+                    phs_dist_unit = int(params_combo[2])
+                    phs_dist_band = int(params_combo[3])
+                    phs_weight = params_combo[4]
+                    
+                    data_matrix_dict[model_name].append(deepcopy(runPhsModel(
+                            training_data=points_crime_region_train, 
+                            grid=masked_grid_region, 
+                            cutoff_time=start_test, 
+                            time_unit=phs_time_unit, 
+                            dist_unit=phs_dist_unit, 
+                            time_bandwidth=phs_time_band, 
+                            dist_bandwidth=phs_dist_band, 
+                            weight=phs_weight
+                            )))
+            elif model_name == "ideal":
+                data_matrix_dict[model_name].append(deepcopy(runNaiveModel(
+                        training_data=points_crime_region_test, 
+                        grid=masked_grid_region
+                        )))
+            else:
+                print("Error!")
+                print(f"This model has not been implemented: {model_name}")
+                print("Skipping for now...")
+                continue
+            
+            
+            
+            
+            
+            
+            for exp_index, data_matrix in enumerate(data_matrix_dict[model_name]):
+                sorted_cells_dict[model_name].append(deepcopy(
+                        sortCellsByRiskMatrix(
+                                cellcoordlist_region, 
+                                data_matrix)
+                        ))
+                
+                
+                hit_rate_list_dict[model_name].append(deepcopy(getHitRateList(
+                        sorted_cells_dict[model_name][exp_index], 
+                        cells_testcrime_ctr)
+                        ))
+                
+                
+                
+                
+                
+                for coverage_rate in coverage_bounds:
+                    
+                    # Get number and % of hits in results
+                    results_hit, results_pct = hitRatesFromHitList(
+                                hit_rate_list_dict[model_name][exp_index], 
+                                coverage_rate, 
+                                num_cells_region, 
+                                num_crimes_test)
+                    
+                    
+                    
+                    
+                    # Standard result info to include for every model
+                    result_info = [
+                            dataset_name, 
+                            crime_types_printable, 
+                            cell_width, 
+                            start_test, 
+                            train_len, 
+                            test_len, 
+                            coverage_rate, 
+                            num_crimes_test, 
+                            results_hit, 
+                            results_pct, 
+                            model_name]
+                    # Pre-pad PHS parameters with empty spaces where
+                    #  columns for non-PHS parameters are
+                    if model_name == "phs":
+                        result_info += ["",""]
+                    # 
+                    result_info += list(model_param_dict[model_name][exp_index])
+                    
+                    # Pad out rest of row with empty string values
+                    while len(result_info) < len(result_info_header):
+                        result_info.append("")
+                    
+                    # Write row to csv file
+                    results_writer.writerow(result_info)
+                    
+                    
+                if run_is_short:
+                    # Plot 2 maps for each run
+                    # Create rank matrix
+                    rank_matrix_dict[model_name].append(deepcopy(
+                            rankMatrixFromSortedCells(
+                                    masked_grid_region, 
+                                    sorted_cells_dict[model_name][exp_index], 
+                                    coverage_bounds
+                            )
+                            ))
+                    
+                    # Save heat map and coverage map as image files
+                    saveModelResultMaps(
+                                    model_name, 
+                                    data_matrix_dict[model_name][exp_index], 
+                                    rank_matrix_dict[model_name][exp_index], 
+                                    exp_num=exp_date_index, 
+                                    file_core=img_file_core, 
+                                    filedir=datadir, 
+                                    polygon=region_polygon, 
+                                    points_to_map=points_crime_region_train, 
+                                    mesh_info=masked_grid_mesh, 
+                                    )
+            
+            
+            
         
-        # Plot testing data on plain grid
-        plotPointsOnGrid(points_crime_region_test, 
-                         masked_grid_region, 
-                         region_polygon, 
-                         title=f"Test data {exp_date_index+1}", 
-                         sizex=8, 
-                         sizey=8)
-        
-        
-        
-        
-        
-        
-        
-        # Count the number of crimes per cell in training data
-        #  This is used for the naive model
-        cells_traincrime_ctr = countPointsPerCell(points_crime_region_train, 
-                                                  masked_grid_region)
-        
-        
-        
-        
-        naive_data_matrix = np.zeros([masked_grid_region.yextent, masked_grid_region.xextent])
-        naive_data_matrix = masked_grid_region.mask_matrix(naive_data_matrix)
-        for c in cells_traincrime_ctr:
-            naive_data_matrix[c] = cells_traincrime_ctr[c]
-        
-        
-        
-        
-        plotPointsOnColorGrid(polygon = region_polygon, 
-                              points = points_crime_region_train, 
-                              mesh_info = masked_grid_mesh, 
-                              value_matrix = naive_data_matrix, 
-                              cmap_choice = yellow_to_red, 
-                              title="Naive map", 
-                              sizex=10, 
-                              sizey=10)
-        
-        
-        
-        
-        
-        # Still need to replace hard-coded parameters in this call here
-        phs_data_matrix = runPhsModel(training_data=points_crime_region_train, 
-                                   grid=masked_grid_region, 
-                                   cutoff_time=start_test, 
-                                   time_unit=np.timedelta64(1, "W"), 
-                                   dist_unit=cell_width, 
-                                   time_bandwidth=np.timedelta64(4, "W"), 
-                                   dist_bandwidth= 4 * cell_width, 
-                                   # ^^^ That should be set as a param
-                                   weight="classic")
-                                   #weight="linear")
-        #phs_data_matrix = masked_grid_region.mask_matrix(phs_data_matrix)
-        
-        
-        plotPointsOnColorGrid(polygon = region_polygon, 
-                              points = points_crime_region_train, 
-                              mesh_info = masked_grid_mesh, 
-                              value_matrix = phs_data_matrix, 
-                              cmap_choice = yellow_to_red, 
-                              title="PHS map", 
-                              sizex=10, 
-                              sizey=10)
-        
-        
-        
-        
-        
-        
-        
-        
-        sorted_cells_naive = sortCellsByRiskMatrix(cellcoordlist_region, 
-                                                   naive_data_matrix)
-        
-        naive_rank_matrix = rankMatrixFromSortedCells(masked_grid_region, 
-                                                      sorted_cells_naive, 
-                                                      coverage_bounds)
-        
-        plotPointsOnColorGrid(polygon = region_polygon, 
-                              points = points_crime_region_train, 
-                              mesh_info = masked_grid_mesh, 
-                              value_matrix = naive_rank_matrix, 
-                              cmap_choice = discrete_colors, 
-                              title="Naive map ranked by coverage", 
-                              sizex=10, 
-                              sizey=10)
-        
-        
-        sorted_cells_phs = sortCellsByRiskMatrix(cellcoordlist_region, 
-                                                   phs_data_matrix)
-        
-        phs_rank_matrix = rankMatrixFromSortedCells(masked_grid_region, 
-                                                      sorted_cells_phs, 
-                                                      coverage_bounds)
-        
-        plotPointsOnColorGrid(polygon = region_polygon, 
-                              points = points_crime_region_train, 
-                              mesh_info = masked_grid_mesh, 
-                              value_matrix = phs_rank_matrix, 
-                              cmap_choice = discrete_colors, 
-                              title="PHS map, ranked by coverage", 
-                              sizex=10, 
-                              sizey=10)
-        
-        
-        
-        
-        
-        
-        sorted_cells_ideal = sorted(cellcoordlist_region, 
-                                    key=lambda x:cells_testcrime_ctr[x], 
-                                    reverse=True)
-        
-        
-        
-        ideal_rank_matrix = rankMatrixFromSortedCells(masked_grid_region, 
-                                                      sorted_cells_ideal, 
-                                                      coverage_bounds)
-        
-        plotPointsOnColorGrid(polygon = region_polygon, 
-                              #points = points_crime_region_train, 
-                              points = points_crime_region_test, 
-                              mesh_info = masked_grid_mesh, 
-                              value_matrix = ideal_rank_matrix, 
-                              cmap_choice = discrete_colors, 
-                              title="Ideal map, ranked by coverage", 
-                              sizex=10, 
-                              sizey=10)
-        
-        
-        
-        sys.exit(0)
-        
-        
-        
-        
-        
-        
-        #hit_rate_list = getHitRateList(sorted_cells, cells_testcrime_ctr)
         
         
         
@@ -856,7 +1139,17 @@ with open(out_csv_full_path, "w") as csvf:
     
     
 
+"""
+# if run_is_short then write risk_info file at the end here
+if run_is_short:
+    # Open risk_info csv file for writing, write header row
+    with open(out_csv_risks_full_path, "w") as csvrisk:
+        risk_writer = csv.writer(csvrisk, delimiter=",", lineterminator="\n")
+        risk_writer.writerow(risk_info_header)
+        
+        # Need to have stored info to write here
+    
+    
 
-
-
+"""
 

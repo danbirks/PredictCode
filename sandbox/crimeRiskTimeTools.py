@@ -40,6 +40,13 @@ def standardizeTimeStep(step):
         step_unit = "D"
     return step_num, step_unit
 
+"""
+shorthandToTimeDelta
+Convert a shorthand string like "3D", "2W", "6M", or "1Y" to
+ an np.timedelta64 object.
+"""
+def shorthandToTimeDelta(step):
+    return np.timedelta64(*standardizeTimeStep(step))
 
 #
 # start: "2018-09-01"
