@@ -4,12 +4,13 @@ Created on Thu Aug  1 14:34:27 2019
 
 @author: lawdfo
 
+riskModelsGeneric.py
 
 Purpose:
-    Visualise output of spatio-temporal crime risk evaluations. In contrast
-    to previous code, the goal here is to not have any hard-coded parameters
-    that are specific to a given dataset (e.g., the Chicago data we've been
-    using for testing).
+    Run spatio-temporal crime risk models and visualise the output. 
+    In contrast to previous code, the goal here is to not have any hard-coded 
+    parameters that are specific to a given dataset (e.g., the Chicago data 
+    we've been using for testing).
 
 
 """
@@ -503,6 +504,7 @@ def saveModelResultMaps(model_name,
                         data_matrix, 
                         rank_matrix, 
                         exp_num, 
+                        exp_param, 
                         file_core, 
                         filedir, 
                         polygon, 
@@ -510,25 +512,31 @@ def saveModelResultMaps(model_name,
                         mesh_info, 
                         ):
     
+    exp_num = str(exp_num)
+    exp_param = str(exp_param)
     
     # Define file names
     
     img_file_heat_name = "_".join(["heatmap", 
                                    model_name, 
-                                   file_core])
+                                   file_core, 
+                                   exp_num, 
+                                   exp_param])
     img_file_heat_name += ".png"
     img_file_heat_fullpath = os.path.join(filedir, img_file_heat_name)
     
     
     img_file_cov_name = "_".join(["covmap", 
                                    model_name, 
-                                   file_core])
+                                   file_core, 
+                                   exp_num, 
+                                   exp_param])
     img_file_cov_name += ".png"
-    img_file_cov_fullpath = os.path.join(datadir, img_file_cov_name)
+    img_file_cov_fullpath = os.path.join(filedir, img_file_cov_name)
     
-    
-    heat_title = f"{model_name.capitalize()} heat map {exp_num}"
-    cov_title = f"{model_name.capitalize()} coverage map {exp_num}"
+    model_cap = model_name.capitalize()
+    heat_title = f"{model_cap} heat map {exp_num} {exp_param}"
+    cov_title = f"{model_cap} coverage map {exp_num} {exp_param}"
     
     # Save risk heat map
     plotPointsOnColorGrid(polygon = polygon, 
@@ -639,18 +647,6 @@ def loadGenericData(filepath, crime_type_set = {"BURGLARY"}, date_format_csv = "
 
 
 
-
-
-
-# Variables with "chktime" are used to start checking the timing
-# Variables with "tkntime" hold the amount of time taken
-
-# Overall timing
-chktime_overall = time.time()
-
-#### Declare data parameters
-chktime_decparam = time.time()
-print("Declaring parameters...")
 
 
 
@@ -871,10 +867,28 @@ def runModelExperiments(
     
     
     
+    
+    
+    # Variables with "chktime" are used to start checking the timing
+    # Variables with "tkntime" hold the amount of time taken
+    
+    # Overall timing
+    chktime_overall = time.time()
+    
+    #### Declare data parameters
+    chktime_decparam = time.time()
+    print("Declaring parameters...")
+    
+
+    
+    
+    
     ###
     # Parameters directly from input, recast as appropriate data types
     
     datadir = os.path.join(*(datadir_in.split("/")))
+    print("datadir is defined as:")
+    print(datadir)
     dataset_name = dataset_name_in
     crime_type_set = set(crime_type_set_in.split(","))
     cell_width = int(cell_width_in)
@@ -975,7 +989,9 @@ def runModelExperiments(
                                dataset_name, \
                                earliest_test_date_str, \
                                test_date_range, \
-                               test_date_step])
+                               test_date_step, \
+                               train_len, \
+                               test_len])
     # Output csv file name for results summary
     out_csv_file_name_results = f"results_{file_name_core}.csv"
     # Output csv file name for detailed risk info if run is short
@@ -1116,7 +1132,6 @@ def runModelExperiments(
                 
                 img_file_core = "_".join([
                                         date_today_str, 
-                                        str(exp_date_index), 
                                         getSixDigitDate(start_test), 
                                         train_len, 
                                         test_len, 
@@ -1186,7 +1201,7 @@ def runModelExperiments(
                     continue
                 
                 model_params = model_param_dict[model_name]
-                
+                model_params_short = []
                 
                 # Generate the data matrix based on the particular model
                 if model_name == "random":
@@ -1204,6 +1219,8 @@ def runModelExperiments(
                             )))
                 elif model_name == "phs":
                     for params_combo in model_params:
+                        short_param = f"{params_combo[1]}-{params_combo[3]}"
+                        model_params_short.append(short_param)
                         # Cast PHS parameters into proper data types
                         phs_time_unit = shorthandToTimeDelta(params_combo[0])
                         phs_time_band = shorthandToTimeDelta(params_combo[1])
@@ -1238,6 +1255,8 @@ def runModelExperiments(
                 
                 
                 for exp_index, data_matrix in enumerate(data_matrix_dict[model_name]):
+                    print(f"Displaying info model_name == {model_name}")
+                    print(f"Displaying info exp_index == {exp_index}")
                     sorted_cells_dict[model_name].append(deepcopy(
                             sortCellsByRiskMatrix(
                                     cellcoordlist_region, 
@@ -1306,17 +1325,21 @@ def runModelExperiments(
                                 ))
                         
                         # Save heat map and coverage map as image files
+                        exp_param_short = exp_index
+                        if model_name == "phs":
+                            exp_param_short = model_params_short[exp_index]
                         saveModelResultMaps(
-                                        model_name, 
-                                        data_matrix_dict[model_name][exp_index], 
-                                        rank_matrix_dict[model_name][exp_index], 
-                                        exp_num=exp_date_index, 
-                                        file_core=img_file_core, 
-                                        filedir=datadir, 
-                                        polygon=region_polygon, 
-                                        points_to_map=points_crime_region_train, 
-                                        mesh_info=masked_grid_mesh, 
-                                        )
+                                model_name, 
+                                data_matrix_dict[model_name][exp_index], 
+                                rank_matrix_dict[model_name][exp_index], 
+                                exp_num=exp_date_index, 
+                                exp_param=exp_param_short, 
+                                file_core=img_file_core, 
+                                filedir=datadir, 
+                                polygon=region_polygon, 
+                                points_to_map=points_crime_region_train, 
+                                mesh_info=masked_grid_mesh, 
+                                )
                 
                 
                 
@@ -1359,6 +1382,15 @@ if run_is_short:
 """
 
 
+
+
+"""
+main:
+
+If running this module as a script instead of importing its functions,
+ this main function will perform runModelExperiments() with a set of
+ default parameters.
+"""
 def main():
     # Run evaluation function with default arguments
     
@@ -1408,9 +1440,9 @@ def main():
     
     # Param list for PHS model.
     phs_time_units = "1W"
-    phs_time_bands = "4W"
+    phs_time_bands = "4W,6W"
     phs_dist_units = "100"
-    phs_dist_bands = "400"
+    phs_dist_bands = "200,300,400"
     phs_weight = "classic"
     
     

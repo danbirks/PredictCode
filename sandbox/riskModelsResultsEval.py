@@ -71,6 +71,56 @@ from crimeRiskTimeTools import generateDateRange, \
                                _day
 
 
+
+
+"""
+Expected data format of input CSV file, by column:
+Header name     Type            Typical contents
+dataset         str             Chicago
+event_types     str             BURGLARY
+cell_width      int             100
+eval_date       np.datetime64   2016-03-01
+train_len       str             8W
+test_len        str             1D
+coverage_rate   float           0.01/0.02/0.05/0.1
+test_events     int             3/2/5/etc
+hit_count       int             1/2/0/etc
+hit_pct         float           0.33333 etc
+model           str             naivecount/phs/etc
+rand_seed       int             
+rhs_bandwidth   int             
+phs_time_unit   str             1 weeks
+phs_time_band   str             4 weeks
+phs_dist_unit   int             100
+phs_dist_band   int             400
+phs_weight      str             linear
+
+"""
+
+csv_data_types = [str, \
+                str, \
+                int, \
+                np.datetime64, \
+                str, \
+                str, \
+                float, \
+                int, \
+                int, \
+                float, \
+                str, \
+                int, \
+                int, \
+                str, \
+                str, \
+                int, \
+                int, \
+                str]
+
+
+
+
+
+
 def splitDataByTimespans(datalist, timespan, dateinfoname="eval_date"):
     print("Performing splitDataByTimespans")
     date_list = sorted(set([d[dateinfoname] for d in datalist]))
@@ -387,6 +437,78 @@ def getAvgHitRates(datalist):
 
 
 
+"""
+getDataByCovRate
+
+Given a path to csv results from running risk models,
+ return a dictionary where keys are coverage rates and 
+ values are the rows of info with that coverage from the csv.
+"""
+def getDataByCovRate(results_full_path, header_types = csv_data_types):
+    
+    # Keep track of total number of events (i.e., crimes)
+    total_event_count = 0
+    
+    # Instantiate a mapping from coverage rate to {another mapping of results}.
+    # That other mapping will be from model to results.
+    # And, those results will be a list of mappings, each entry in the list being
+    #  a different row from the csv results
+    datadicts_by_cov_rate = defaultdict(lambda: defaultdict(list))
+    
+    # Open csv output and start reading it
+    with open(results_full_path, newline="") as f:
+        reader = csv.reader(f)
+        
+        # Obtain column names from header in first line
+        header = next(reader, None)
+        
+        # Read each line of data
+        for dataline in reader:
+            # Instantiate a map from col name to data, for this line
+            dataline_dict = dict()
+            
+            # All data is currently in string form.
+            # Use header_types to cast the data appropriately.
+            for i,d in enumerate(dataline):
+                # Default is empty string
+                casted_data = ""
+                # Things like int("") don't work, so we catch that here
+                if d != "":
+                    casted_data = header_types[i](d)
+                # Transform data into str/int/float/datetime64 before storing it
+                dataline_dict[header[i]] = casted_data
+            
+            
+            # Keep track of how many eval_date's we've seen,
+            #  and how many events (crimes) there have been in total
+            # If date is outside of desired range, continue
+            dataline_date = dataline_dict["eval_date"]
+            if earliest_eval_date != None and dataline_date < earliest_eval_date:
+                continue
+            if latest_eval_date != None and latest_eval_date < dataline_date:
+                continue
+            if dataline_date not in dates_seen:
+                total_event_count += dataline_dict["test_events"]
+                dates_seen.add(dataline_date)
+            
+            # Grab coverage and model, since we'll use those a lot
+            dataline_cov = dataline_dict["coverage_rate"]
+            dataline_model = dataline_dict["model"]
+            
+            # Grab the bandwidths for PHS results, store them as "param_pair"
+            if dataline_model == "phs":
+                time_band = int(dataline_dict["phs_time_band"].split()[0])
+                dist_band = dataline_dict["phs_dist_band"]
+                dataline_dict["param_pair"] = (time_band, dist_band)
+            
+            # Store dict so they're first sorted by coverage then by model type
+            datadicts_by_cov_rate[dataline_cov][dataline_model].append(dataline_dict)
+            
+    return datadicts_by_cov_rate
+
+
+
+
 
 
 
@@ -405,125 +527,22 @@ datadir = os.path.join("..", "..", "Data")
 results_fname = "results_190628_Chicago_130101_5Y_1D.csv"
 
 
-# Only include results of tests more recent OR EQUAL to this date
+# Only include results of tests later OR EQUAL to this date
 earliest_eval_date = np.datetime64("2013-01-01")
-# Only include results of tests more earlier BUT NOT EQUAL to this date
+# Only include results of tests earlier BUT NOT EQUAL to this date
 latest_eval_date = None
 
 
 results_full_path = os.path.join(datadir, results_fname)
 
-rel_results = []
-rel_res_limit = 999999999
 
-"""
-Expected data format, by column:
-Header name     Type            Typical contents
-dataset         str             Chicago
-event_types     str             BURGLARY
-cell_width      int             100
-eval_date       np.datetime64   2016-03-01
-train_len       str             8W
-test_len        str             1D
-coverage_rate   float           0.01/0.02/0.05/0.1
-test_events     int             3/2/5/etc
-hit_count       int             1/2/0/etc
-hit_pct         float           0.33333 etc
-model           str             naivecount/phs/etc
-rand_seed       int             
-rhs_bandwidth   int             
-phs_time_unit   str             1 weeks
-phs_time_band   str             4 weeks
-phs_dist_unit   int             100
-phs_dist_band   int             400
-phs_weight      str             linear
-
-"""
-
-header_types = [str, \
-                str, \
-                int, \
-                np.datetime64, \
-                str, \
-                str, \
-                float, \
-                int, \
-                int, \
-                float, \
-                str, \
-                int, \
-                int, \
-                str, \
-                str, \
-                int, \
-                int, \
-                str]
 
 # Keep track of dates seen in the output data
 dates_seen = set()
 
-# Keep track of total number of events (i.e., crimes)
-total_event_count = 0
+datadicts_by_cov_rate = getDataByCovRate(results_full_path)
 
-# Instantiate a mapping from coverage rate to {another mapping of results}.
-# That other mapping will be from model to results.
-# And, those results will be a list of mappings, each entry in the list being
-#  a different row from the csv results
-datadicts_by_cov_rate = defaultdict(lambda: defaultdict(list))
 
-# Open csv output and start reading it
-with open(results_full_path, newline="") as f:
-    reader = csv.reader(f)
-    
-    # Obtain column names from header in first line
-    header = next(reader, None)
-    # Now the header is essentially a map from column number to column name.
-    # Let's also get the inverse, mapping column name to column number
-    #header_map = dict([(h,i) for i,h in enumerate(header)])
-    
-    # Read each line of data
-    for dataline in reader:
-        # Instantiate a map from col name to data, for this line
-        dataline_dict = dict()
-        
-        # All data is currently in string form.
-        # Use "header_types" (above) to cast the data appropriately.
-        for i,d in enumerate(dataline):
-            # Default is empty string
-            casted_data = ""
-            # Things like int("") don't work, so we catch that here
-            if d != "":
-                casted_data = header_types[i](d)
-            # Transform data into str/int/float/datetime64 before storing it
-            dataline_dict[header[i]] = casted_data
-        
-        
-        # Keep track of how many eval_date's we've seen,
-        #  and how many events (crimes) there have been in total
-        # If date is outside of desired range, continue
-        dataline_date = dataline_dict["eval_date"]
-        if earliest_eval_date != None and dataline_date < earliest_eval_date:
-            continue
-        if latest_eval_date != None and latest_eval_date < dataline_date:
-            continue
-        if dataline_date not in dates_seen:
-            total_event_count += dataline_dict["test_events"]
-            dates_seen.add(dataline_date)
-        
-        # Grab coverage and model, since we'll use those a lot
-        dataline_cov = dataline_dict["coverage_rate"]
-        dataline_model = dataline_dict["model"]
-        
-        # Grab the bandwidths for PHS results, store them as "param_pair"
-        if dataline_model == "phs":
-            time_band = int(dataline_dict["phs_time_band"].split()[0])
-            dist_band = dataline_dict["phs_dist_band"]
-            dataline_dict["param_pair"] = (time_band, dist_band)
-        
-        # Store dict so they're first sorted by coverage then by model type
-        datadicts_by_cov_rate[dataline_cov][dataline_model].append(dataline_dict)
-        
-        
 
 # Determine the number of evaluation dates in the data
 # We expect this to equal the number of instances of random/naive/ideal
@@ -678,3 +697,8 @@ for cov, datadicts_by_model in datadicts_by_cov_rate.items():
 
 
 sys.exit(0)
+
+
+
+if __name__ == "__main__":
+    main()
