@@ -569,7 +569,7 @@ def saveModelResultMaps(model_name,
 """
 loadGenericData
 """
-def loadGenericData(filepath, crime_type_set = {"BURGLARY"}, date_format_csv = "%m/%d/%Y %I:%M:%S %p", epsg = None, proj=None, longlat=True, infeet=False, has_header=True):
+def loadGenericData(filepath, crime_type_set = {"BURGLARY"}, date_format_csv = "%m/%d/%Y %I:%M:%S %p", epsg = None, proj=None, longlat=False, infeet=False, has_header=True):
     
     # Note: Data is expected in a csv file with the following properties:
     # Row 0 = Header
@@ -661,7 +661,8 @@ def loadGenericData(filepath, crime_type_set = {"BURGLARY"}, date_format_csv = "
 
 
 """
-Formerly section of setting parameters; trying to remove it now.
+Former section of setting parameters here;
+ it will be removed after confirming it's no longer needed.
 
 
 
@@ -1255,8 +1256,10 @@ def runModelExperiments(
                 
                 
                 for exp_index, data_matrix in enumerate(data_matrix_dict[model_name]):
-                    print(f"Displaying info model_name == {model_name}")
-                    print(f"Displaying info exp_index == {exp_index}")
+                    
+                    if exp_date_index % print_exp_freq == 0:
+                        print(f"model_name: {model_name}")
+                        print(f"parameter set #: {exp_index}")
                     sorted_cells_dict[model_name].append(deepcopy(
                             sortCellsByRiskMatrix(
                                     cellcoordlist_region, 

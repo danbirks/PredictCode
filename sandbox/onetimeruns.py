@@ -143,6 +143,45 @@ def onetimeGeojsonManipulation(datadir):
             convert from EPSG 4326 to a local EPSG (like 2790 or 27700)
             save it to a new geojson
         
-    
-    
     """
+
+
+"""
+Given original file:
+    Use ogr2ogr to convert to geojson if necessary
+        For example, given durham.kml, use this command:
+        > ogr2ogr -f GeoJSON durham.geojson durham.kml
+    Use the following function to read that geojson,
+        form the union of certain subsets, if necessary
+        convert from EPSG 4326 to a local EPSG (like 2790 or 27700)
+        save it to a new geojson
+    
+"""
+def convertGeojsonUKCounty(orig_geojson_path, 
+                           county_name, 
+                           new_geojson_path
+                           ):
+    
+    #county_name = "Durham"
+    
+    
+    import geopandas as gpd
+    
+    # Open GeoJSON file
+    #geojson_file_name = "durham.geojson"
+    #geojson_full_path = os.path.join(datadir, geojson_file_name)
+    geo_frame = gpd.read_file(orig_geojson_path)
+    
+    # Remove unnecessary "Description" column
+    geo_frame_nodesc = geo_frame.drop(["Description"], axis=1)
+    # Set the name (this *might* not be required)
+    geo_frame_nodesc.iloc[0]["Name"] = county_name
+    # Transform data to UK-specific EPSG of 27700
+    geo_frame_nodesc = geo_frame_nodesc.to_crs({"init": "epsg:27700"})
+    
+    # Save off new version of geodataframe into GeoJSON file
+    #geojson_27_file_name = f"{county_name}_27700.geojson"
+    #geojson_27_full_path = os.path.join(datadir, geojson_dur_27_file_name)
+    geo_frame_nodesc.to_file(new_geojson_path, driver="GeoJSON")
+    
+    return

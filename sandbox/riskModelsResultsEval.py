@@ -533,8 +533,10 @@ earliest_eval_date = np.datetime64("2013-01-01")
 latest_eval_date = None
 
 
-results_full_path = os.path.join(datadir, results_fname)
 
+
+
+results_full_path = os.path.join(datadir, results_fname)
 
 
 # Keep track of dates seen in the output data
@@ -557,7 +559,7 @@ print(latest_date_seen)
 
 phsdicts_by_cov_rate = dict([(cov, d["phs"]) for cov, d in datadicts_by_cov_rate.items()])
 
-naivedicts_by_cov_rate = dict([(cov, d["naivecount"]) for cov, d in datadicts_by_cov_rate.items()])
+naivedicts_by_cov_rate = dict([(cov, d["naive"]) for cov, d in datadicts_by_cov_rate.items()])
 
 
 create_naive_csv_summary = True
