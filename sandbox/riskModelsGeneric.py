@@ -169,7 +169,7 @@ def countPointsPerCell(points, grid):
 
 
 """
-getHitRateList
+getHitCountList
 
 Purpose:
 Given a sorted list of cells, and a mapping from cells to number of events
@@ -185,13 +185,13 @@ Note that the list starts with 0, in the event that the coverage is so low
  that no cells are checked. If the coverage allows you to check n cells, then
  the hit rate will be the value at index n (0-up).
 """
-def getHitRateList(sorted_cells, cell_hit_map):
+def getHitCountList(sorted_cells, cell_hit_map):
     running_total = 0
-    hit_rate_list = [0]
+    hit_count_list = [0]
     for cell in sorted_cells:
         running_total += cell_hit_map[tuple(cell)]
-        hit_rate_list.append(running_total)
-    return hit_rate_list
+        hit_count_list.append(running_total)
+    return hit_count_list
 
 
 
@@ -319,11 +319,11 @@ def sortCellsByRiskMatrix(cells, risk_matrix):
 """
 hitRatesFromHitList
 """
-def hitRatesFromHitList(hit_rate_list, 
+def hitRatesFromHitList(hit_count_list, 
                         coverage_rate, 
                         num_cells, 
                         num_crimes_test):
-    num_hits = hit_rate_list[int(coverage_rate * num_cells)]
+    num_hits = hit_count_list[int(coverage_rate * num_cells)]
     pct_hits = 0
     if num_crimes_test>0:
         pct_hits = num_hits / num_crimes_test
@@ -503,8 +503,7 @@ general heat map and in different bins of coverage.
 def saveModelResultMaps(model_name, 
                         data_matrix, 
                         rank_matrix, 
-                        exp_num, 
-                        exp_param, 
+                        exp_ident, 
                         file_core, 
                         filedir, 
                         polygon, 
@@ -512,16 +511,13 @@ def saveModelResultMaps(model_name,
                         mesh_info, 
                         ):
     
-    exp_num = str(exp_num)
-    exp_param = str(exp_param)
     
     # Define file names
     
     img_file_heat_name = "_".join(["heatmap", 
                                    model_name, 
                                    file_core, 
-                                   exp_num, 
-                                   exp_param])
+                                   exp_ident])
     img_file_heat_name += ".png"
     img_file_heat_fullpath = os.path.join(filedir, img_file_heat_name)
     
@@ -529,14 +525,13 @@ def saveModelResultMaps(model_name,
     img_file_cov_name = "_".join(["covmap", 
                                    model_name, 
                                    file_core, 
-                                   exp_num, 
-                                   exp_param])
+                                   exp_ident])
     img_file_cov_name += ".png"
     img_file_cov_fullpath = os.path.join(filedir, img_file_cov_name)
     
     model_cap = model_name.capitalize()
-    heat_title = f"{model_cap} heat map {exp_num} {exp_param}"
-    cov_title = f"{model_cap} coverage map {exp_num} {exp_param}"
+    heat_title = f"{model_cap} heat map {exp_ident}"
+    cov_title = f"{model_cap} coverage map {exp_ident}"
     
     # Save risk heat map
     plotPointsOnColorGrid(polygon = polygon, 
@@ -863,7 +858,7 @@ def runModelExperiments(
             phs_dist_units_in = None, 
             phs_dist_bands_in = None, 
             phs_weight_in = None, 
-            print_exp_freq_in = 5, 
+            print_exp_freq_in = 1, 
             ):
     
     
@@ -938,6 +933,9 @@ def runModelExperiments(
     # PHS has several parameters: time units, time bandwidths, distance units,
     #  distance bandwidths, and weight method
     model_param_dict = dict()
+    # Keep separate list of short string representations of parameter
+    #  combinations, for ease of printing on graphs, e.g.
+    model_params_short = defaultdict(list)
     if "ideal" in models_to_run:
         model_param_dict["ideal"] = [()]
     if "naive" in models_to_run:
@@ -946,16 +944,30 @@ def runModelExperiments(
     #  For example, if 4, param list is [(0,), (1,), (2,), (3,)]
     if "random" in models_to_run:
         model_param_dict["random"] = list(product(range(num_random)))
+        if num_random > 1:
+            model_params_short["random"]=[str(x) for x in range(num_random)]
     # Param list for PHS model.
     if "phs" in models_to_run:
-        model_param_dict["phs"] = list(product(
-                                    phs_time_units, 
-                                    phs_time_bands, 
-                                    phs_dist_units, 
-                                    phs_dist_bands, 
-                                    phs_weight))
-    
-    
+        poss_phs_params = [phs_time_units, 
+                           phs_time_bands, 
+                           phs_dist_units, 
+                           phs_dist_bands, 
+                           phs_weight]
+        model_param_dict["phs"] = list(product(*poss_phs_params))
+        params_to_iter = []
+        for p_list in poss_phs_params:
+            if len(p_list)>1:
+                params_to_iter.append([str(x) for x in p_list])
+        model_params_short["phs"] = \
+                        ["-".join(p) for p in product(*params_to_iter)]
+    model_idents = dict()
+    for model_name in models_to_run:
+        if len(model_params_short[model_name])<2:
+            model_idents[model_name] = [model_name]
+        else:
+            model_idents[model_name] = \
+                [f"{model_name}-{x}" for x in model_params_short[model_name]]
+    #model_idents_flat = [iden for mname in model_idents for iden in dd[mname]]
     
     
     
@@ -1129,6 +1141,8 @@ def runModelExperiments(
             #  map visualisations of the data and models' results.
             if run_is_short:
                 
+                print("Making image file names for training and testing data")
+                
                 # Make image file names for training and testing data
                 
                 img_file_core = "_".join([
@@ -1187,6 +1201,7 @@ def runModelExperiments(
             data_matrix_dict = defaultdict(list)
             sorted_cells_dict = defaultdict(list)
             rank_matrix_dict = defaultdict(list)
+            hit_count_list_dict = defaultdict(list)
             hit_rate_list_dict = defaultdict(list)
             
             
@@ -1202,7 +1217,6 @@ def runModelExperiments(
                     continue
                 
                 model_params = model_param_dict[model_name]
-                model_params_short = []
                 
                 # Generate the data matrix based on the particular model
                 if model_name == "random":
@@ -1220,8 +1234,6 @@ def runModelExperiments(
                             )))
                 elif model_name == "phs":
                     for params_combo in model_params:
-                        short_param = f"{params_combo[1]}-{params_combo[3]}"
-                        model_params_short.append(short_param)
                         # Cast PHS parameters into proper data types
                         phs_time_unit = shorthandToTimeDelta(params_combo[0])
                         phs_time_band = shorthandToTimeDelta(params_combo[1])
@@ -1262,31 +1274,43 @@ def runModelExperiments(
                         print(f"parameter set #: {exp_index}")
                     sorted_cells_dict[model_name].append(deepcopy(
                             sortCellsByRiskMatrix(
-                                    cellcoordlist_region, 
-                                    data_matrix)
+                                cellcoordlist_region, 
+                                data_matrix)
                             ))
                     
                     
-                    hit_rate_list_dict[model_name].append(deepcopy(getHitRateList(
+                    hit_count_list_dict[model_name].append(
+                        deepcopy(getHitCountList(
                             sorted_cells_dict[model_name][exp_index], 
-                            cells_testcrime_ctr)
-                            ))
+                            cells_testcrime_ctr))
+                        )
                     
-                    
+                    if num_crimes_test == 0:
+                        hit_rate_list_dict[model_name].append(deepcopy(
+                            [0 for x in hit_count_list_dict[model_name][-1]]
+                        ))
+                    else:
+                        hit_rate_list_dict[model_name].append(deepcopy(
+                            [float(x/num_crimes_test) \
+                                 for x in hit_count_list_dict[model_name][-1]]
+                        ))
+                        
                     
                     
                     
                     for coverage_rate in coverage_bounds:
                         
                         # Get number and % of hits in results
-                        results_hit, results_pct = hitRatesFromHitList(
-                                    hit_rate_list_dict[model_name][exp_index], 
-                                    coverage_rate, 
-                                    num_cells_region, 
-                                    num_crimes_test)
+                        #results_hit, results_pct = hitRatesFromHitList(
+                        #            hit_count_list_dict[model_name][exp_index], 
+                        #            coverage_rate, 
+                        #            num_cells_region, 
+                        #            num_crimes_test)
                         
                         
-                        
+                        cov_rate_index = int(coverage_rate * num_cells_region)
+                        results_hit = hit_count_list_dict[model_name][exp_index][cov_rate_index]
+                        results_pct = hit_rate_list_dict[model_name][exp_index][cov_rate_index]
                         
                         # Standard result info to include for every model
                         result_info = [
@@ -1317,7 +1341,8 @@ def runModelExperiments(
                         
                         
                     if run_is_short:
-                        # Plot 2 maps for each run
+                        print("Plotting 2 maps for each model")
+                        # Plot 2 maps for each model
                         # Create rank matrix
                         rank_matrix_dict[model_name].append(deepcopy(
                                 rankMatrixFromSortedCells(
@@ -1328,27 +1353,29 @@ def runModelExperiments(
                                 ))
                         
                         # Save heat map and coverage map as image files
-                        exp_param_short = exp_index
-                        if model_name == "phs":
-                            exp_param_short = model_params_short[exp_index]
                         saveModelResultMaps(
                                 model_name, 
                                 data_matrix_dict[model_name][exp_index], 
                                 rank_matrix_dict[model_name][exp_index], 
-                                exp_num=exp_date_index, 
-                                exp_param=exp_param_short, 
-                                file_core=img_file_core, 
-                                filedir=datadir, 
-                                polygon=region_polygon, 
-                                points_to_map=points_crime_region_train, 
-                                mesh_info=masked_grid_mesh, 
+                                exp_ident = model_idents[model_name][exp_index], 
+                                file_core = img_file_core, 
+                                filedir = datadir, 
+                                polygon = region_polygon, 
+                                points_to_map = points_crime_region_train, 
+                                mesh_info = masked_grid_mesh, 
                                 )
                 
                 
-                
             
             
-            
+            # If only a couple experiments, then create a line graph
+            #  comparing hit rates of different models (y-axis) based
+            #  on coverage rate (x-axis)
+            if run_is_short:
+                print("Plotting graph coverage vs hit rate")
+                from riskModelsResultsEval import graphCoverageVsHitRate
+                graphCoverageVsHitRate(hit_count_list_dict, model_idents, models_to_run)
+                graphCoverageVsHitRate(hit_rate_list_dict, model_idents, models_to_run)
             
             
             
@@ -1365,10 +1392,19 @@ def runModelExperiments(
         
         
         
+    
+    
+    if not run_is_short:
+        print("Plotting graph hit rates over time")
+        from riskModelsResultsEval import graphHitRatesOverTime
+        graphHitRatesOverTime(out_csv_results_full_path)
+    
+    
     print("Experiment timing info:")
     print("Exp #\tTime")
     for i, t in enumerate(exp_times):
         print(f"{i}\t{t}")
+    return
 
 """
 # if run_is_short then write risk_info file at the end here
@@ -1420,13 +1456,13 @@ def main():
     geojson_file_name = "Chicago_South_Side_2790.geojson"
     #geojson_file_name = "Durham_27700.geojson"
     # Of all planned experiments, earliest start of a TEST (not train) data set
-    earliest_test_date = "2003-01-01"
+    earliest_test_date = "2005-01-01"
     # Time between earliest experiment and latest experiment
-    test_date_range = "1W"
+    test_date_range = "15W"
     # Length of training data
-    train_len = "8W"
+    train_len = "12W"
     # Length of testing data
-    test_len = "1W"
+    test_len = "3W"
     # Time step offset between different experiments
     # (If you want non-overlapping, then set test_date_step = test_len)
     #test_date_step = "1D"

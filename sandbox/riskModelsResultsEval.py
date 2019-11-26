@@ -444,10 +444,17 @@ Given a path to csv results from running risk models,
  return a dictionary where keys are coverage rates and 
  values are the rows of info with that coverage from the csv.
 """
-def getDataByCovRate(results_full_path, header_types = csv_data_types):
+def getDataByCovRate(results_full_path, 
+                     header_types = csv_data_types, 
+                     earliest_eval_date = None, 
+                     latest_eval_date = None, 
+                     ):
     
     # Keep track of total number of events (i.e., crimes)
     total_event_count = 0
+    dates_seen = []
+    model_param_names = []
+    cov_rates = set()
     
     # Instantiate a mapping from coverage rate to {another mapping of results}.
     # That other mapping will be from model to results.
@@ -489,216 +496,495 @@ def getDataByCovRate(results_full_path, header_types = csv_data_types):
                 continue
             if dataline_date not in dates_seen:
                 total_event_count += dataline_dict["test_events"]
-                dates_seen.add(dataline_date)
+                dates_seen.append(dataline_date)
             
             # Grab coverage and model, since we'll use those a lot
             dataline_cov = dataline_dict["coverage_rate"]
+            if dataline_cov not in cov_rates:
+                cov_rates.add(dataline_cov)
             dataline_model = dataline_dict["model"]
             
             # Grab the bandwidths for PHS results, store them as "param_pair"
             if dataline_model == "phs":
-                time_band = int(dataline_dict["phs_time_band"].split()[0])
+                time_band = int(dataline_dict["phs_time_band"][:-1])
                 dist_band = dataline_dict["phs_dist_band"]
                 dataline_dict["param_pair"] = (time_band, dist_band)
             
+            model_param_name = dataline_model
+            if dataline_model == "random":
+                model_param_name += "-" + str(dataline_dict["rand_seed"])
+            elif dataline_model == "phs":
+                model_param_name += "-" + "-".join([str(x) for x in dataline_dict["param_pair"]])
+            
+            if model_param_name not in model_param_names:
+                model_param_names.append(model_param_name)
+            
             # Store dict so they're first sorted by coverage then by model type
-            datadicts_by_cov_rate[dataline_cov][dataline_model].append(dataline_dict)
+            datadicts_by_cov_rate[dataline_cov][model_param_name].append(dataline_dict)
             
-    return datadicts_by_cov_rate
+    return datadicts_by_cov_rate, dates_seen, model_param_names, sorted(cov_rates)
 
 
 
 
 
-
-
-datadir = os.path.join("..", "..", "Data")
-#results_fname = "results_190515_Chicago_160101_1M_1D.csv"
-#results_fname = "results_190517_Chicago_020101_1Y_1D.csv"
-#results_fname = "results_190517_Chicago_020101_1Y_3D.csv"
-#results_fname = "results_190522_Chicago_020101_1Y_7D.csv"
-#results_fname = "results_190621_Chicago_160301_1M_1D.csv"
-
-
-
-#results_fname = "results_190621_Chicago_160301_9M_1D.csv"
-#results_fname = "temp_results_190621_Chicago_010301_17Y_1D.csv"
-#results_fname = "results_190621_Chicago_010301_17Y_1D.csv"
-results_fname = "results_190628_Chicago_130101_5Y_1D.csv"
-
-
-# Only include results of tests later OR EQUAL to this date
-earliest_eval_date = np.datetime64("2013-01-01")
-# Only include results of tests earlier BUT NOT EQUAL to this date
-latest_eval_date = None
-
-
-
-
-
-results_full_path = os.path.join(datadir, results_fname)
-
-
-# Keep track of dates seen in the output data
-dates_seen = set()
-
-datadicts_by_cov_rate = getDataByCovRate(results_full_path)
-
-
-
-# Determine the number of evaluation dates in the data
-# We expect this to equal the number of instances of random/naive/ideal
-#  experiments, and also the number of phs experiments when multiplied by
-#  the number of phs parameter combinations.
-num_dates = len(dates_seen)
-print(num_dates)
-earliest_date_seen =sorted(dates_seen)[0]
-latest_date_seen =sorted(dates_seen)[-1]
-print(earliest_date_seen)
-print(latest_date_seen)
-
-phsdicts_by_cov_rate = dict([(cov, d["phs"]) for cov, d in datadicts_by_cov_rate.items()])
-
-naivedicts_by_cov_rate = dict([(cov, d["naive"]) for cov, d in datadicts_by_cov_rate.items()])
-
-
-create_naive_csv_summary = True
-if create_naive_csv_summary:
+def graphHitRatesOverTime(results_full_path):
     
-    timespan = "1M"
-    date_today = datetime.date.today()
-    date_today_str = getSixDigitDate(date_today)
-    earliest_date_str = getSixDigitDate(earliest_date_seen)
-    latest_date_str = getSixDigitDate(latest_date_seen)
-    sumcsv_base = f"ratesummary_xsr_nai_{date_today_str}_{earliest_date_str}_{latest_date_str}_{timespan}.csv"
-    sumcsvname = os.path.join(datadir, sumcsv_base)
-    writeModelSummaryCsv(naivedicts_by_cov_rate, timespan, "naive", csvname=sumcsvname)
+    datadicts_by_cov_rate, exp_dates, model_names, cov_rates = getDataByCovRate(results_full_path)
     
+    
+    for cov_rate in cov_rates:
+        
+        # Declare figure
+        print("Declaring figure for graphHitRatesOverTime...")
+        fig, ax = plt.subplots(figsize=(12,6))
+        
+        names_for_legend = []
+        
+        cov_results_all_models = datadicts_by_cov_rate[cov_rate]
+        num_dates = len(exp_dates)
+        num_models = len(model_names)
+        for mn in model_names:
+            if len(cov_results_all_models[mn]) != num_dates:
+                print("Error!")
+                print(f"Model: {mn}")
+                print(f"Expected number of experiments: {num_dates}")
+                print(f"Found number of experiments: {len(cov_results_all_models[mn])}")
+                sys.exit(0)
+        result_matrix = np.zeros((num_models, num_dates))
+        for mn_index, mn in enumerate(model_names):
+            names_for_legend.append(mn)
+            model_results = cov_results_all_models[mn]
+            for mr_index, mr in enumerate(model_results):
+                result_matrix[mn_index, mr_index] = mr["hit_pct"]
+        for row_num, row in enumerate(result_matrix):
+            ax.plot(exp_dates, row)
+        
+        ax.legend(names_for_legend)
+        ax.tick_params(axis='x', rotation=90)
+        ax.set_title(f"Hit rates over time, coverage {cov_rate}")
+    
+    
+    """
+    result_matrix = np.zeros((len(all_exp_results[0]), len(all_exp_results)))
+    for exp_num, exp in enumerate(all_exp_results):
+        for model_num, model_result in enumerate(exp):
+            result_matrix[model_num, exp_num] = model_result[0][coverage_cell_index]
+    
+    for row_num, row in enumerate(result_matrix):
+        ax.plot(test_data_dates, row + (results_count_offset * row_num) )
+        names_for_legend.append(all_exp_results[0][row_num][1])
+    
+    
+    
+    x_axis_size = len(hit_rates_dict[model_names[0]][0])
+    x_axis_values = np.linspace(0,1,x_axis_size)
+    
+    print(x_axis_size)
+    
+    for mn in model_names:
+        for hr in hit_rates_dict[mn]:
+            ax.plot(x_axis_values, hr)
+        for mr in model_runs_list[mn]:
+            names_for_legend.append(mr)
+    
+    ax.legend(names_for_legend)
+    """
+    
+    
+    
+    return
+    
+    
+    
+    
+    
+
+
+
+"""
+Copied snippets from riskModelsCompare
+Still working out this section...
+"""
+def graphCoverageVsHitRate(hit_rates_dict, model_runs_list, model_names):
+    
+    """
+    print(len(hit_rates_dict))
+    for m in hit_rates_dict:
+        print(m)
+        print(len(hit_rates_dict[m]))
+        print(len(hit_rates_dict[m][0]))
+    print(len(model_runs_list))
+    print(model_runs_list)
+    """
+    
+    model_hit_rate_pairs = []
+    for mn in model_names:
+        model_hit_rate_pairs += list(zip(model_runs_list[mn], hit_rates_dict[mn]))
+        #hit_rates_flat += hit_rates_dict[mn]
+        #model_runs_flat += model_runs_list[mn]
+    #print(len(hit_rates_flat))
+    #print(len(model_runs_flat))
+    print(len(model_hit_rate_pairs))
+    
+    
+    
+    
+    ### DECLARE FIGURE FOR HITRATE/COVERAGE
+    
+    # !!! I should add an option for the x-axis of the figure!!!
+    
+    
+    #results_count_offset = .025
+    #results_rate_offset = .005
+    #results_count_offset = 0
+    #results_rate_offset = 0
+    
+    
+    
+    
+    
+    # new version
+    
+    # Declare figure
+    print("Declaring figure for graphCoverageVsHitRate...")
+    fig, ax = plt.subplots(figsize=(12,6))
+    
+    
+    names_for_legend = []
+    
+    x_axis_size = len(hit_rates_dict[model_names[0]][0])
+    x_axis_values = np.linspace(0,1,x_axis_size)
+    
+    print(x_axis_size)
+    
+    for mn in model_names:
+        for hr in hit_rates_dict[mn]:
+            ax.plot(x_axis_values, hr)
+        for mr in model_runs_list[mn]:
+            names_for_legend.append(mr)
+    
+    ax.legend(names_for_legend)
+    
+    return
+    
+    
+    
+    
+    
+    
+    
+    
+    
+    """
+    result_matrix = np.zeros((len(all_exp_results[0]), len(all_exp_results)))
+    for exp_num, exp in enumerate(all_exp_results):
+        for model_num, model_result in enumerate(exp):
+            result_matrix[model_num, exp_num] = model_result[0][coverage_cell_index]
+    
+    for row_num, row in enumerate(result_matrix):
+        ax.plot(test_data_dates, row + (results_count_offset * row_num) )
+        names_for_legend.append(all_exp_results[0][row_num][1])
+    
+    
+    #ax.legend(names_for_legend)
+    ax.tick_params(axis='x', rotation=90)
+    
+    
+    
+    
+    
+    
+    
+    
+    
+    
+    
+    # one of the orig sections from riskModelsCompare
+    # Declare figure
+    print("Declaring figure...")
+    fig, ax = plt.subplots(figsize=(12,6))
+    
+    
+    names_for_legend = []
+    
+    
+    
+    
+    
+    result_matrix = np.zeros((len(all_exp_results[0]), len(all_exp_results)))
+    for exp_num, exp in enumerate(all_exp_results):
+        for model_num, model_result in enumerate(exp):
+            result_matrix[model_num, exp_num] = model_result[0][coverage_cell_index]
+    
+    for row_num, row in enumerate(result_matrix):
+        ax.plot(test_data_dates, row + (results_count_offset * row_num) )
+        names_for_legend.append(all_exp_results[0][row_num][1])
+    
+    
+    #ax.legend(names_for_legend)
+    ax.tick_params(axis='x', rotation=90)
+    
+    
+    
+    
+    
+    
+    # Declare figure
+    print("Declaring figure...")
+    fig, ax = plt.subplots(figsize=(12,6))
+    
+    
+    names_for_legend = []
+    
+    
+    #xcoords = test_data_dates
+    
+    coverage_rate = 0.10
+    coverage_cell_index = int(num_cells_region * coverage_rate)-1
+    print("reg {}".format(num_cells_region))
+    print("cov {}".format(coverage_rate))
+    print("cci {}".format(coverage_cell_index))
+    
+    result_matrix = np.zeros((len(all_exp_results[0]), len(all_exp_results)))
+    for exp_num, exp in enumerate(all_exp_results):
+        if test_data_counts[exp_num] == 0:
+            continue
+        for model_num, model_result in enumerate(exp):
+            result_matrix[model_num, exp_num] = \
+                model_result[0][coverage_cell_index]/test_data_counts[exp_num]
+    
+    for row_num, row in enumerate(result_matrix):
+        ax.plot(test_data_dates, row + (results_rate_offset * row_num) )
+        names_for_legend.append(all_exp_results[0][row_num][1])
+    
+    
+    #ax.legend(names_for_legend)
+    ax.tick_params(axis='x', rotation=90)
+    
+    
+    """
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+def main():
+    
+    
+    datadir = os.path.join("..", "..", "Data")
+    #results_fname = "results_190515_Chicago_160101_1M_1D.csv"
+    #results_fname = "results_190517_Chicago_020101_1Y_1D.csv"
+    #results_fname = "results_190517_Chicago_020101_1Y_3D.csv"
+    #results_fname = "results_190522_Chicago_020101_1Y_7D.csv"
+    #results_fname = "results_190621_Chicago_160301_1M_1D.csv"
+    
+    
+    
+    #results_fname = "results_190621_Chicago_160301_9M_1D.csv"
+    #results_fname = "temp_results_190621_Chicago_010301_17Y_1D.csv"
+    #results_fname = "results_190621_Chicago_010301_17Y_1D.csv"
+    results_fname = "results_190628_Chicago_130101_5Y_1D.csv"
+    
+    
+    # Only include results of tests later OR EQUAL to this date
+    earliest_eval_date = np.datetime64("2013-01-01")
+    # Only include results of tests earlier BUT NOT EQUAL to this date
+    latest_eval_date = None
+    
+    
+    
+    
+    
+    results_full_path = os.path.join(datadir, results_fname)
+    
+    
+    # Keep track of dates seen in the output data
+    dates_seen = set()
+    
+    datadicts_by_cov_rate = getDataByCovRate(results_full_path)
+    
+    
+    
+    # Determine the number of evaluation dates in the data
+    # We expect this to equal the number of instances of random/naive/ideal
+    #  experiments, and also the number of phs experiments when multiplied by
+    #  the number of phs parameter combinations.
+    num_dates = len(dates_seen)
+    print(num_dates)
+    earliest_date_seen =sorted(dates_seen)[0]
+    latest_date_seen =sorted(dates_seen)[-1]
+    print(earliest_date_seen)
+    print(latest_date_seen)
+    
+    phsdicts_by_cov_rate = dict([(cov, d["phs"]) for cov, d in datadicts_by_cov_rate.items()])
+    
+    naivedicts_by_cov_rate = dict([(cov, d["naive"]) for cov, d in datadicts_by_cov_rate.items()])
+    
+    
+    create_naive_csv_summary = True
+    if create_naive_csv_summary:
+        
+        timespan = "1M"
+        date_today = datetime.date.today()
+        date_today_str = getSixDigitDate(date_today)
+        earliest_date_str = getSixDigitDate(earliest_date_seen)
+        latest_date_str = getSixDigitDate(latest_date_seen)
+        sumcsv_base = f"ratesummary_xsr_nai_{date_today_str}_{earliest_date_str}_{latest_date_str}_{timespan}.csv"
+        sumcsvname = os.path.join(datadir, sumcsv_base)
+        writeModelSummaryCsv(naivedicts_by_cov_rate, timespan, "naive", csvname=sumcsvname)
+        
+        
+        
+        sys.exit(0)
+    
+    create_phs_csv_summary = False
+    if create_phs_csv_summary:
+        
+        
+        
+        timespan = "1M"
+        date_today = datetime.date.today()
+        date_today_str = getSixDigitDate(date_today)
+        earliest_date_str = getSixDigitDate(earliest_date_seen)
+        latest_date_str = getSixDigitDate(latest_date_seen)
+        phssumcsv_base = f"ratesummary_xsr_phs_{date_today_str}_{earliest_date_str}_{latest_date_str}_{timespan}.csv"
+        phssumcsvname = os.path.join(datadir, phssumcsv_base)
+        #writePhsSummaryCsv(phs_list, timespan, csvname=phssumcsvname)
+        writeModelSummaryCsv(phsdicts_by_cov_rate, timespan, "phs", csvname=phssumcsvname)
+        
+        
+        
+        sys.exit(0)
+    
+    
+    create_phs_csv_var = True
+    if create_phs_csv_var:
+        
+        
+        
+        timespan = "1M"
+        date_today = datetime.date.today()
+        date_today_str = getSixDigitDate(date_today)
+        earliest_date_str = getSixDigitDate(earliest_date_seen)
+        latest_date_str = getSixDigitDate(latest_date_seen)
+        phssumcsv_base = f"ratevar_{date_today_str}_{earliest_date_str}_{latest_date_str}_{timespan}.csv"
+        phssumcsvname = os.path.join(datadir, phssumcsv_base)
+        #writePhsSummaryCsv(phs_list, timespan, csvname=phssumcsvname)
+        writePhsVariabilityCsv(phsdicts_by_cov_rate, timespan, phssumcsvname)
+        
+        
+        
+        sys.exit(0)
+    
+    
+    
+    
+    
+    
+    
+    
+    
+    
+    
+    all_model_names = ["random", "naivecount", "ideal", "rhs", "phs"]
+    basic_model_names = all_model_names[:3]
+    
+    for cov, datadicts_by_model in datadicts_by_cov_rate.items():
+        print(f"Coverage rate: {cov}")
+        
+        # Get overall result summaries for basic models
+        for model_name in basic_model_names:
+            if model_name in datadicts_by_model:
+                
+                # Obtain list of results for this (coverage, model) combo
+                datalist = datadicts_by_model[model_name]
+                
+                # Confirm that we have the expected number of results
+                if len(datalist) != num_dates:
+                    print("Error! Unexpected number of results!")
+                    print(f"Number expected per model: {num_dates}")
+                    print(f"Number seen for model {model_name}: {len(datalist)}")
+                    sys.exit(1)
+                
+                #  ("Hit" = event in testing period within model's top cov% cells)
+                # Total number of successful "hits"
+                total_hit_count = sum([d["hit_count"] for d in datalist])
+                # Total possible number of "hits"
+                total_hit_poss = sum([d["test_events"] for d in datalist])
+                # Overall hit rate
+                total_hit_rate = total_hit_count/total_hit_poss
+                # Average of all individual hit rates
+                average_hit_rate = sum(d["hit_pct"] for d in datalist)/num_dates
+                print(f"\tModel: {model_name}")
+                #print(f"\t\tTotal hit rate: {total_hit_count}/{total_hit_poss} = {total_hit_rate:6.4f}")
+                print(f"\t\tAverage hit rate: {average_hit_rate:6.4f}")
+        
+        # Generate a table of results for all PHS bandwidth pairs tested
+        if "phs" in datadicts_by_model:
+            phs_list = datadicts_by_model["phs"]
+            
+            # phs_list is what should be fed into checkPhsConsistency etc
+            
+            #checkPhsConsistency(phs_list, "1M", 10)
+            #sys.exit(0)
+            #continue
+            
+            #getPhsStats(phs_list, "1M")
+            #sys.exit(0)
+            
+            
+            
+            print("0\t" + "\t".join([str(x) + " weeks" for x in range(1,9)]))
+            best_sum_dist_time = (-1, 0, 0)
+            best_avg_dist_time = (-1, 0, 0)
+            for dist_band in range(100,1100,100):
+                toprint_list = [str(dist_band)]
+                for time_band in range(1,9):
+                    #total_hit_count = sum(d["hit_count"] for d in phs_list if d["param_pair"]==(time_band, dist_band))
+                    #total_hit_rate = total_hit_count/total_event_count
+                    hit_rate_sum = sum(d["hit_pct"] for d in phs_list if d["param_pair"]==(time_band, dist_band))
+                    hit_rate_avg = hit_rate_sum/num_dates
+                    #toprint_list.append(f"{total_hit_rate:6.4f},{hit_rate_avg:6.4f}")
+                    toprint_list.append(f"{hit_rate_avg:6.4f}")
+                    #if total_hit_rate > best_sum_dist_time[0]:
+                    #    best_sum_dist_time = (total_hit_rate, dist_band, time_band)
+                    if hit_rate_avg > best_avg_dist_time[0]:
+                        best_avg_dist_time = (hit_rate_avg, dist_band, time_band)
+                print("\t".join(toprint_list))
+            #print(f"Best total hit rate result: {best_sum_dist_time[0]:6.4f} {best_sum_dist_time[1:]}")
+            print(f"Best average hit rate result: {best_avg_dist_time[0]:6.4f} {best_avg_dist_time[1:]}")
+        
+        
     
     
     sys.exit(0)
-
-create_phs_csv_summary = False
-if create_phs_csv_summary:
-    
-    
-    
-    timespan = "1M"
-    date_today = datetime.date.today()
-    date_today_str = getSixDigitDate(date_today)
-    earliest_date_str = getSixDigitDate(earliest_date_seen)
-    latest_date_str = getSixDigitDate(latest_date_seen)
-    phssumcsv_base = f"ratesummary_xsr_phs_{date_today_str}_{earliest_date_str}_{latest_date_str}_{timespan}.csv"
-    phssumcsvname = os.path.join(datadir, phssumcsv_base)
-    #writePhsSummaryCsv(phs_list, timespan, csvname=phssumcsvname)
-    writeModelSummaryCsv(phsdicts_by_cov_rate, timespan, "phs", csvname=phssumcsvname)
-    
-    
-    
-    sys.exit(0)
-
-
-create_phs_csv_var = True
-if create_phs_csv_var:
-    
-    
-    
-    timespan = "1M"
-    date_today = datetime.date.today()
-    date_today_str = getSixDigitDate(date_today)
-    earliest_date_str = getSixDigitDate(earliest_date_seen)
-    latest_date_str = getSixDigitDate(latest_date_seen)
-    phssumcsv_base = f"ratevar_{date_today_str}_{earliest_date_str}_{latest_date_str}_{timespan}.csv"
-    phssumcsvname = os.path.join(datadir, phssumcsv_base)
-    #writePhsSummaryCsv(phs_list, timespan, csvname=phssumcsvname)
-    writePhsVariabilityCsv(phsdicts_by_cov_rate, timespan, phssumcsvname)
-    
-    
-    
-    sys.exit(0)
-
-
-
-
-
-
-
-
-
-
-
-all_model_names = ["random", "naivecount", "ideal", "rhs", "phs"]
-basic_model_names = all_model_names[:3]
-
-for cov, datadicts_by_model in datadicts_by_cov_rate.items():
-    print(f"Coverage rate: {cov}")
-    
-    # Get overall result summaries for basic models
-    for model_name in basic_model_names:
-        if model_name in datadicts_by_model:
-            
-            # Obtain list of results for this (coverage, model) combo
-            datalist = datadicts_by_model[model_name]
-            
-            # Confirm that we have the expected number of results
-            if len(datalist) != num_dates:
-                print("Error! Unexpected number of results!")
-                print(f"Number expected per model: {num_dates}")
-                print(f"Number seen for model {model_name}: {len(datalist)}")
-                sys.exit(1)
-            
-            #  ("Hit" = event in testing period within model's top cov% cells)
-            # Total number of successful "hits"
-            total_hit_count = sum([d["hit_count"] for d in datalist])
-            # Total possible number of "hits"
-            total_hit_poss = sum([d["test_events"] for d in datalist])
-            # Overall hit rate
-            total_hit_rate = total_hit_count/total_hit_poss
-            # Average of all individual hit rates
-            average_hit_rate = sum(d["hit_pct"] for d in datalist)/num_dates
-            print(f"\tModel: {model_name}")
-            #print(f"\t\tTotal hit rate: {total_hit_count}/{total_hit_poss} = {total_hit_rate:6.4f}")
-            print(f"\t\tAverage hit rate: {average_hit_rate:6.4f}")
-    
-    # Generate a table of results for all PHS bandwidth pairs tested
-    if "phs" in datadicts_by_model:
-        phs_list = datadicts_by_model["phs"]
-        
-        # phs_list is what should be fed into checkPhsConsistency etc
-        
-        #checkPhsConsistency(phs_list, "1M", 10)
-        #sys.exit(0)
-        #continue
-        
-        #getPhsStats(phs_list, "1M")
-        #sys.exit(0)
-        
-        
-        
-        print("0\t" + "\t".join([str(x) + " weeks" for x in range(1,9)]))
-        best_sum_dist_time = (-1, 0, 0)
-        best_avg_dist_time = (-1, 0, 0)
-        for dist_band in range(100,1100,100):
-            toprint_list = [str(dist_band)]
-            for time_band in range(1,9):
-                #total_hit_count = sum(d["hit_count"] for d in phs_list if d["param_pair"]==(time_band, dist_band))
-                #total_hit_rate = total_hit_count/total_event_count
-                hit_rate_sum = sum(d["hit_pct"] for d in phs_list if d["param_pair"]==(time_band, dist_band))
-                hit_rate_avg = hit_rate_sum/num_dates
-                #toprint_list.append(f"{total_hit_rate:6.4f},{hit_rate_avg:6.4f}")
-                toprint_list.append(f"{hit_rate_avg:6.4f}")
-                #if total_hit_rate > best_sum_dist_time[0]:
-                #    best_sum_dist_time = (total_hit_rate, dist_band, time_band)
-                if hit_rate_avg > best_avg_dist_time[0]:
-                    best_avg_dist_time = (hit_rate_avg, dist_band, time_band)
-            print("\t".join(toprint_list))
-        #print(f"Best total hit rate result: {best_sum_dist_time[0]:6.4f} {best_sum_dist_time[1:]}")
-        print(f"Best average hit rate result: {best_avg_dist_time[0]:6.4f} {best_avg_dist_time[1:]}")
-    
-    
-
-
-sys.exit(0)
 
 
 

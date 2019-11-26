@@ -64,58 +64,13 @@ _day = np.timedelta64(1,"D")
 
 
 
+from crimeRiskTimeTools import generateDateRange, \
+                                generateLaterDate, \
+                                generateEarlierDate, \
+                                getTimedPointsInTimeRange
 
 
 
-def standardizeTimeStep(step):
-    step_num = int(step[:-1])
-    step_unit = step[-1].upper()
-    if step_unit not in "YMWD":
-        print("This function only recognizes Y/M/W/D as time units")
-        sys.exit(1)
-    if step_unit == "W":
-        step_num *= 7
-        step_unit = "D"
-    return step_num, step_unit
-
-
-#
-# start: "2018-09-01"
-# end: "2019-03-01"
-# step: "3D", "2W", "6M", "1Y", etc
-# output is always array containing type datetime64[D]
-def generateDateRange(start, end, step):
-    step_num, step_unit = standardizeTimeStep(step)
-    start_datetime = np.datetime64(start)
-    end_datetime = np.datetime64(end)
-    date_range = np.arange(start_datetime, end_datetime, step=np.timedelta64(step_num, step_unit), dtype="datetime64[{}]".format(step_unit))
-    return np.array(date_range, dtype="datetime64[D]")
-
-
-
-def generateLaterDate(start, step):
-    step_num, step_unit = standardizeTimeStep(step)
-    converted_start = np.datetime64(start, step_unit)
-    later_date = converted_start + np.timedelta64(step_num, step_unit)
-    return np.datetime64(later_date, "D")
-
-
-def generateEarlierDate(end, step):
-    return generateLaterDate(end, "-"+step)
-    #step_num, step_unit = standardizeTimeStep(step)
-    #converted_end = np.datetime64(end, step_unit)
-    #earlier_date = converted_end - np.timedelta64(step_num, step_unit)
-    #return np.datetime64(earlier_date, "D")
-
-
-
-
-# Given a TimedPoints object that contains spatial coordinates paired
-#  with timestamps, return a similar object that only contains the
-#  data whose timestamps are within the given range
-def getTimedPointsInTimeRange(points, start_time, end_time):
-    return points[(points.timestamps >= start_time)
-                  & (points.timestamps <= end_time)]
 
 # Given a TimedPoints object and a Grid (MaskedGrid?) object,
 #  return a Counter object that is a mapping from the grid cell
