@@ -25,6 +25,70 @@ import open_cp.geometry
 import open_cp.sources.chicago as chicago
 from open_cp.data import TimedPoints
 
+"""
+makeSubsetFile
+
+Ex: 
+    in_csv_full_path = '..\\..\\Data\\chi_all_s_BURGLARY_RES_010101_190101_stdXY.csv'
+    temp_out_csv_full_path = '..\\..\\Data\\chi_all_s_BURGLARY_RES_010101_080101_stdXY.csv'
+    makeSubsetFile(in_csv_full_path, temp_out_csv_full_path, end_date="2008-01-01")
+"""
+def makeSubsetFile(in_short,
+                   out_long,
+                   start_date=None,
+                   end_date=None,
+                   crime_types=None,
+                   loc_types=None,
+                   ):
+    
+    date_format_csv = "%m/%d/%Y %I:%M:%S %p"
+    if start_date != None:
+        start_date = np.datetime64(start_date)
+    if end_date != None:
+        end_date = np.datetime64(end_date)
+    if crime_types != None:
+        crime_types = set(crime_types.split(","))
+    if loc_types != None:
+        loc_types = set(loc_types.split(","))
+    
+    # Open csv input and start reading it
+    with open(in_short, newline="") as f:
+        reader = csv.reader(f)
+        
+        # Obtain column names from header in first line
+        header = next(reader, None)
+        
+        
+        
+        # Open output csv file for writing, write header row
+        with open(out_long, "w") as csvf:
+            shorter_writer = csv.writer(csvf, 
+                                        delimiter=",", 
+                                        lineterminator="\n")
+            shorter_writer.writerow(header)
+            
+            
+            # Read each line of data
+            for dataline in reader:
+                if start_date != None or end_date != None:
+                    t = datetime.datetime.strptime(dataline[0], date_format_csv)
+                    t = np.datetime64(t)
+                    print(t)
+                    print(type(t))
+                    print(end_date)
+                    print(type(end_date))
+                    if start_date != None and t < start_date:
+                        continue
+                    if end_date != None and t > end_date:
+                        continue
+                if crime_types != None and dataline[3] not in crime_types:
+                    continue
+                if loc_types != None and dataline[4] not in loc_types:
+                    continue
+                shorter_writer.writerow(dataline)
+                
+                
+    return
 
 
 """

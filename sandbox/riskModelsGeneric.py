@@ -125,6 +125,17 @@ recognised_models = ["random", "naive", "phs", "ideal"]
 
 
 """
+splitCommaArgs
+Given a string as an argument meant to be comma-separated, but possibly
+ containing spaces that need to be stripped away, return a list of those
+ strings. (This was common enough that it warranted its own function to
+ save a bit of space.)
+"""
+def splitCommaArgs(argstring):
+    return [x.strip() for x in argstring.split(",")]
+
+
+"""
 getRegionCells
 
 Purpose:
@@ -882,11 +893,18 @@ def runModelExperiments(
     ###
     # Parameters directly from input, recast as appropriate data types
     
-    datadir = os.path.join(*(datadir_in.split("/")))
+    datadir = os.path.normpath(datadir_in)
+    datadir = os.path.expanduser(datadir)
+    datadir = os.path.expandvars(datadir)
     print("datadir is defined as:")
     print(datadir)
+    if not os.path.isdir(datadir):
+        print("Error!")
+        print(f"Directory does not exist: {datadir}")
+        print("Exiting...")
+        sys.exit(1)
     dataset_name = dataset_name_in
-    crime_type_set = set(crime_type_set_in.split(","))
+    crime_type_set = set(splitCommaArgs(crime_type_set_in))
     cell_width = int(cell_width_in)
     in_csv_file_name = in_csv_file_name_in
     geojson_file_name = geojson_file_name_in
@@ -897,19 +915,20 @@ def runModelExperiments(
     test_date_step = test_date_step_in
     if test_date_step == None:
         test_date_step = test_len
-    coverage_bounds = [float(x) for x in coverage_bounds_in.split(",")]
-    models_to_run = models_to_run_in.split(",")
+    coverage_bounds = [float(x) for x in \
+                       splitCommaArgs(coverage_bounds_in)]
+    models_to_run = splitCommaArgs(models_to_run_in)
     if "random" in models_to_run:
         if num_random_in == None:
             num_random = 1
         else:
             num_random = int(num_random_in)
     if "phs" in models_to_run:
-        phs_time_units = phs_time_units_in.split(",")
-        phs_time_bands = phs_time_bands_in.split(",")
-        phs_dist_units = [int(x) for x in phs_dist_units_in.split(",")]
-        phs_dist_bands = [int(x) for x in phs_dist_bands_in.split(",")]
-        phs_weight = phs_weight_in.split(",")
+        phs_time_units = splitCommaArgs(phs_time_units_in)
+        phs_time_bands = splitCommaArgs(phs_time_bands_in)
+        phs_dist_units = [int(x) for x in splitCommaArgs(phs_dist_units_in)]
+        phs_dist_bands = [int(x) for x in splitCommaArgs(phs_dist_bands_in)]
+        phs_weight = splitCommaArgs(phs_weight_in)
     print_exp_freq = int(print_exp_freq_in)
     
     
@@ -1008,11 +1027,11 @@ def runModelExperiments(
     # Output csv file name for results summary
     out_csv_file_name_results = f"results_{file_name_core}.csv"
     # Output csv file name for detailed risk info if run is short
-    out_csv_file_name_risks = f"risks_{file_name_core}.csv"
+    #out_csv_file_name_risks = f"risks_{file_name_core}.csv"
     # Full path for output csv file of results
     out_csv_results_full_path = os.path.join(datadir, out_csv_file_name_results)
     # Full path for output csv file of risk info if run is short
-    out_csv_risks_full_path = os.path.join(datadir, out_csv_file_name_risks)
+    #out_csv_risks_full_path = os.path.join(datadir, out_csv_file_name_risks)
     # Full path for geojson file
     geojson_full_path = os.path.join(datadir, geojson_file_name)
     # Append risk_MODEL and rank_MODEL to risk_info_header for each model
@@ -1021,6 +1040,17 @@ def runModelExperiments(
             risk_info_header.append(f"risk_{model_name}")
             risk_info_header.append(f"rank_{model_name}")
     
+    # Check that data file and geojson file exist
+    if not os.path.isfile(in_csv_full_path):
+        print("Error!")
+        print(f"File does not exist: {in_csv_full_path}")
+        print("Exiting...")
+        sys.exit(1)
+    if not os.path.isfile(geojson_full_path):
+        print("Error!")
+        print(f"File does not exist: {geojson_full_path}")
+        print("Exiting...")
+        sys.exit(1)
     
     
     print("...declared parameters.")
