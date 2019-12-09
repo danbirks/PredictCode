@@ -247,13 +247,18 @@ def plotPointsOnGrid(points,
     ax.set(xlim=[xmin-500,xmax+500], ylim=[ymin-500,ymax+500])
     
     pc = patches_from_grid(masked_grid)
+    
+    
+    
     ax.add_collection(PatchCollection(pc, facecolor="None", edgecolor="black"))
+    
     if title != None:
         ax.set_title(title)
     
     
     if out_img_file_path != None:
         fig.savefig(out_img_file_path)
+    
     
     return
 
@@ -575,7 +580,7 @@ def saveModelResultMaps(model_name,
 """
 loadGenericData
 """
-def loadGenericData(filepath, crime_type_set = {"BURGLARY"}, date_format_csv = "%m/%d/%Y %I:%M:%S %p", epsg = None, proj=None, longlat=False, infeet=False, has_header=True):
+def loadGenericData(filepath, crime_type_set = {"BURGLARY"}, date_format_csv = "%m/%d/%Y %I:%M:%S %p", epsg = None, proj=None, longlat=False, infeet=True, has_header=True):
     
     # Note: Data is expected in a csv file with the following properties:
     # Row 0 = Header
@@ -595,6 +600,8 @@ def loadGenericData(filepath, crime_type_set = {"BURGLARY"}, date_format_csv = "
     
     #!!! Need to enforce "%m/%d/%Y %I:%M:%S %p" format for csv files!!!
     #!!! Also change "infeet" issues at standardizing stage too!!!
+    
+    
     
     if longlat:
         try:
@@ -870,8 +877,12 @@ def runModelExperiments(
             phs_dist_bands_in = None, 
             phs_weight_in = None, 
             print_exp_freq_in = 1, 
+            csv_date_format = "%m/%d/%Y %I:%M:%S %p", 
+            csv_longlat = False, 
+            csv_epsg = None, 
+            csv_infeet = True, 
+            csv_has_header = True, 
             ):
-    
     
     
     
@@ -927,6 +938,10 @@ def runModelExperiments(
         phs_time_units = splitCommaArgs(phs_time_units_in)
         phs_time_bands = splitCommaArgs(phs_time_bands_in)
         phs_dist_units = [int(x) for x in splitCommaArgs(phs_dist_units_in)]
+        for du in phs_dist_units:
+            if du > cell_width:
+                print("PHS distance unit ({du}) cannot exceed cell width ({cell_width})")
+                sys.exit(1)
         phs_dist_bands = [int(x) for x in splitCommaArgs(phs_dist_bands_in)]
         phs_weight = splitCommaArgs(phs_weight_in)
     print_exp_freq = int(print_exp_freq_in)
@@ -991,7 +1006,8 @@ def runModelExperiments(
     
     
     # Printable string of crime types, concatenated by "_" if necessary
-    crime_types_printable = "_".join(sorted(crime_type_set))
+    crime_type_set_dashed = ["-".join(x.split()) for x in sorted(crime_type_set)]
+    crime_types_printable = "_".join(sorted(crime_type_set_dashed))
     # Full path for input csv file
     in_csv_full_path = os.path.join(datadir, in_csv_file_name)
     # Nicely-formatted string of test date
@@ -1086,14 +1102,29 @@ def runModelExperiments(
         #     is always Eastings/Northings, and in meters
         points_crime = loadGenericData(in_csv_full_path, 
                                        crime_type_set=crime_type_set, 
-                                       longlat=False, 
-                                       infeet=True)
+                                       date_format_csv = csv_date_format, 
+                                       longlat=csv_longlat, 
+                                       epsg = csv_epsg, 
+                                       infeet=csv_infeet, 
+                                       has_header = csv_has_header)
+        
+        num_crimes_total = len(points_crime.timestamps)
+        print(f"Total number of relevant crimes: {num_crimes_total}")
+        
         
         # Obtain polygon from geojson file (which should have been pre-processed)
         region_polygon = gpd.read_file(geojson_full_path).unary_union
         
         # Get subset of input crime that occurred within region
         points_crime_region = intersect_timed_points(points_crime, region_polygon)
+        
+        
+        
+        
+        num_crimes_region = len(points_crime_region.timestamps)
+        print(f"Total number of relevant crimes in area: {num_crimes_region}")
+        
+        
         
         # Get grid version of region
         masked_grid_region = mask_grid_by_intersection(region_polygon, 
@@ -1102,6 +1133,14 @@ def runModelExperiments(
                                                                 xoffset=0, 
                                                                 yoffset=0)
                                                        )
+        
+        
+        
+        
+        
+        
+        
+        
         
         # Get "mesh info" of that grid, which is useful for displaying the map
         masked_grid_mesh = masked_grid_region.mesh_info()
@@ -1188,6 +1227,8 @@ def runModelExperiments(
                                                         img_file_train_name)
                 img_file_test_full_path = os.path.join(datadir, 
                                                        img_file_test_name)
+                print(f"Training: {img_file_train_name}")
+                print(f"Testing: {img_file_test_name}")
                 
                 # Plot training data on plain grid
                 plotPointsOnGrid(points_crime_region_train, 
@@ -1206,6 +1247,10 @@ def runModelExperiments(
                                  sizex=10, 
                                  sizey=10, 
                                  out_img_file_path=img_file_test_full_path)
+                
+                
+                
+                
             
             
             
@@ -1470,29 +1515,33 @@ def main():
     # Location of data file
     datadir = "../../Data"
     # Dataset name (to be included in name of output file)
-    dataset_name = "chicago"
+    #dataset_name = "chicago"
+    dataset_name = "FantDur"
     # Crime types
     #!!!  May want to change this to be different for train vs test?
     #!!!  May want to use multiple sets of types, then combine results?
-    crime_type_set = "BURGLARY"
+    #crime_type_set = "BURGLARY"
+    crime_type_set = "Burglary, Vehicle crime"
     #crime_type_set_sweep = [{"BURGLARY"}] # if doing a sweep over different sets
     # Size of grid cells
     #cell_width_sweep = [100] # if doing a sweep over different cell sizes
-    cell_width = 100
+    cell_width = 500
     # Input csv file name
-    in_csv_file_name = "chi_all_s_BURGLARY_RES_010101_190101_stdXY.csv"
+    #in_csv_file_name = "chi_all_s_BURGLARY_RES_010101_190101_stdXY.csv"
+    in_csv_file_name = "Fantasy-Durham-Data_std.csv"
     # Geojson file
     #geojson_file_name = "Chicago_Areas.geojson"
-    geojson_file_name = "Chicago_South_Side_2790.geojson"
-    #geojson_file_name = "Durham_27700.geojson"
+    #geojson_file_name = "Chicago_South_Side_2790.geojson"
+    geojson_file_name = "Durham_27700.geojson"
     # Of all planned experiments, earliest start of a TEST (not train) data set
-    earliest_test_date = "2005-01-01"
+    #earliest_test_date = "2016-09-01"
+    earliest_test_date = "2019-09-01"
     # Time between earliest experiment and latest experiment
-    test_date_range = "15W"
+    test_date_range = "1W"
     # Length of training data
-    train_len = "12W"
+    train_len = "4W"
     # Length of testing data
-    test_len = "3W"
+    test_len = "1W"
     # Time step offset between different experiments
     # (If you want non-overlapping, then set test_date_step = test_len)
     #test_date_step = "1D"
@@ -1503,20 +1552,52 @@ def main():
     
     
     # Predictive models to run
+    #models_to_run = "random,naive,phs,ideal"
     models_to_run = "random,naive,phs,ideal"
     
-    num_random = 3
+    num_random = 1
     
     # Param list for PHS model.
     phs_time_units = "1W"
     phs_time_bands = "4W,6W"
-    phs_dist_units = "100"
-    phs_dist_bands = "200,300,400"
+    phs_dist_units = "500"
+    phs_dist_bands = "500,1000,1500"
     phs_weight = "classic"
     
     
     # How frequently to display a print statement about an experiment
     print_exp_freq = 1
+    
+    
+    
+    
+    if dataset_name == "chicago":
+        """
+        crime_type_set = "BURGLARY"
+        in_csv_file_name = "chi_all_s_BURGLARY_RES_010101_190101_stdXY.csv"
+        geojson_file_name = "Chicago_South_Side_2790.geojson"
+        earliest_test_date = "2016-09-01"
+        """
+        csv_date_format = "%m/%d/%Y %I:%M:%S %p"
+        csv_longlat = False
+        csv_epsg = None
+        csv_infeet = True
+        csv_has_header = True
+    
+    if dataset_name == "FantDur":
+        """
+        crime_type_set = "Burglary, Vehicle crime"
+        in_csv_file_name = "Fantasy-Durham-Data_std.csv"
+        geojson_file_name = "Durham_27700.geojson"
+        earliest_test_date = "2019-09-01"
+        """
+        
+        csv_date_format = "%d/%m/%Y"
+        csv_longlat = True
+        csv_epsg = 27700
+        csv_infeet = False
+        csv_has_header = True
+    
     
     
     
@@ -1542,10 +1623,16 @@ def main():
             phs_dist_bands_in = phs_dist_bands, 
             phs_weight_in = phs_weight, 
             print_exp_freq_in = print_exp_freq, 
+            csv_date_format = csv_date_format, 
+            csv_longlat = csv_longlat, 
+            csv_epsg = csv_epsg, 
+            csv_infeet = csv_infeet, 
+            csv_has_header = csv_has_header, 
             )
     
     
-
+    
+    
 
 
 

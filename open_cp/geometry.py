@@ -187,7 +187,13 @@ def intersect_timed_points(timed_points, geo):
     # shape of np-asarray-mp: (23653, 2)
     # type of pt in _np.asarray(mp): <class 'numpy.ndarray'>
     # shape of pt in _np.asarray(mp): (2,)
-    points_we_want = set(tuple(pt) for pt in _np.asarray(mp))
+    
+    # NOTE: The slicing "[:,:2]" in this next line was added because
+    #  using some geojson files somehow resulted in points with 3
+    #  dimensions here, immediately after the above "mp.intersection(geo)"
+    #  line. Forcing the slice here to only take the first 2 dimensions
+    #  is a workaround until that bug can be understood and fixed.
+    points_we_want = set(tuple(pt) for pt in _np.asarray(mp)[:,:2])
     mask = [pt in points_we_want for pt in points]
     mask = _np.array(mask, dtype=_np.bool)
     return timed_points[mask]
