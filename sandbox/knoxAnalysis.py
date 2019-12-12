@@ -460,6 +460,8 @@ def get_knox_data_from_file(knox_file_path, exp_limit=0):
         
         
         for exp_index, exp in enumerate(knox_data):
+            #print(f"exp.stats\n{exp.stats}")
+            #print(f"exp.medians\n{exp.medians}")
             knox_data[exp_index].ratios = exp.stats/exp.medians
     
     return knox_data
@@ -485,7 +487,14 @@ def make_knox_info_file(datadir,
                         num_exp, 
                         time_step, 
                         time_len, 
+                        csv_date_format = "%m/%d/%Y %I:%M:%S %p", 
+                        csv_longlat = False, 
+                        csv_epsg = None, 
+                        csv_infeet = True, 
+                        csv_has_header = True, 
                         ):
+    
+    
     
     # Normalised and derived parameters
     
@@ -524,8 +533,15 @@ def make_knox_info_file(datadir,
     # Obtain all crimes (of relevant types) from input data
     points_crime = loadGenericData(in_csv_full_path, 
                                    crime_type_set=crime_type_set, 
-                                   longlat=False, 
-                                   infeet=True)
+                                   date_format_csv = csv_date_format, 
+                                   longlat=csv_longlat, 
+                                   epsg = csv_epsg, 
+                                   infeet=csv_infeet, 
+                                   has_header = csv_has_header
+                                   )
+    
+    
+    
     
     # Obtain polygon from geojson file (which should have been pre-processed)
     region_polygon = gpd.read_file(geojson_full_path).unary_union

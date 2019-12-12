@@ -636,7 +636,14 @@ def graphCoverageVsHitRate(hit_rates_dict,
 """
 loadGenericData
 """
-def loadGenericData(filepath, crime_type_set = {"BURGLARY"}, date_format_csv = "%m/%d/%Y %I:%M:%S %p", epsg = None, proj=None, longlat=False, infeet=True, has_header=True):
+def loadGenericData(filepath, 
+                    crime_type_set = {"BURGLARY"}, 
+                    date_format_csv = "%m/%d/%Y %I:%M:%S %p", 
+                    epsg = None, 
+                    proj=None, 
+                    longlat=False, 
+                    infeet=True, 
+                    has_header=True):
     
     # Note: Data is expected in a csv file with the following properties:
     # Row 0 = Header
