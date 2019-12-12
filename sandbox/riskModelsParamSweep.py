@@ -564,7 +564,9 @@ test_len = "7D"
 test_date_step = test_len
 
 # List of all experiment dates
-start_test_list = generateDateRange(earliest_test_date, latest_test_date, test_date_step)
+start_test_list = generateDateRange(start=earliest_test_date, 
+                                    end=latest_test_date, 
+                                    step=test_date_step)
 # Number of different experiment dates
 total_num_exp_dates = len(start_test_list)
 

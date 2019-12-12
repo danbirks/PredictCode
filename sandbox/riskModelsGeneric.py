@@ -258,7 +258,7 @@ def plotPointsOnGrid(points,
     
     if out_img_file_path != None:
         fig.savefig(out_img_file_path)
-    
+    print(f"Saved image file: {out_img_file_path}")
     
     return
 
@@ -578,6 +578,62 @@ def saveModelResultMaps(model_name,
 
 
 """
+graphCoverageVsHitRate
+
+
+"""
+def graphCoverageVsHitRate(hit_rates_dict, 
+                           model_runs_list, 
+                           model_names, 
+                           x_limits = None, 
+                           title = None, 
+                           out_img_file_path = None):
+    
+    model_hit_rate_pairs = []
+    for mn in model_names:
+        model_hit_rate_pairs += list(zip(model_runs_list[mn], hit_rates_dict[mn]))
+    
+    
+    # Declare figure
+    print("Declaring figure for graphCoverageVsHitRate...")
+    fig, ax = plt.subplots(figsize=(12,6))
+    
+    
+    names_for_legend = []
+    
+    x_axis_size = len(hit_rates_dict[model_names[0]][0])
+    x_axis_values = np.linspace(0,1,x_axis_size)
+    
+    
+    for mn in model_names:
+        for hr in hit_rates_dict[mn]:
+            ax.plot(x_axis_values, hr)
+        for mr in model_runs_list[mn]:
+            names_for_legend.append(mr)
+    
+    ax.legend(names_for_legend)
+    
+    ax.set(xlabel="Coverage", ylabel="Hit rate")
+    
+    # Set the axes to have a buffer of 500 around the polygon
+    if x_limits != None:
+        ax.set(xlim=x_limits)
+    
+    if title != None:
+        ax.set_title(title)
+    
+    if out_img_file_path != None:
+        fig.savefig(out_img_file_path)
+    
+    return
+    
+    
+
+
+
+
+
+"""
 loadGenericData
 """
 def loadGenericData(filepath, crime_type_set = {"BURGLARY"}, date_format_csv = "%m/%d/%Y %I:%M:%S %p", epsg = None, proj=None, longlat=False, infeet=True, has_header=True):
@@ -870,6 +926,7 @@ def runModelExperiments(
             test_date_step_in, 
             coverage_bounds_in, 
             models_to_run_in, 
+            coverage_max_in = None, 
             num_random_in = None, 
             phs_time_units_in = None, 
             phs_time_bands_in = None, 
@@ -926,8 +983,8 @@ def runModelExperiments(
     test_date_step = test_date_step_in
     if test_date_step == None:
         test_date_step = test_len
-    coverage_bounds = [float(x) for x in \
-                       splitCommaArgs(coverage_bounds_in)]
+    coverage_bounds = sorted([float(x) for x in \
+                       splitCommaArgs(coverage_bounds_in)])
     models_to_run = splitCommaArgs(models_to_run_in)
     if "random" in models_to_run:
         if num_random_in == None:
@@ -945,7 +1002,9 @@ def runModelExperiments(
         phs_dist_bands = [int(x) for x in splitCommaArgs(phs_dist_bands_in)]
         phs_weight = splitCommaArgs(phs_weight_in)
     print_exp_freq = int(print_exp_freq_in)
-    
+    coverage_max = coverage_bounds[-1]
+    if coverage_max_in != None:
+        coverage_max = float(coverage_max_in)
     
     
     
@@ -1015,9 +1074,9 @@ def runModelExperiments(
     # Latest start of a test data set, calculated from earliest and length
     latest_test_date = generateLaterDate(earliest_test_date, test_date_range)
     # List of all experiment dates
-    start_test_list = generateDateRange(earliest_test_date, 
-                                        latest_test_date, 
-                                        test_date_step)
+    start_test_list = generateDateRange(start=earliest_test_date, 
+                                        end=latest_test_date, 
+                                        step=test_date_step)
     # Number of different experiment dates
     total_num_exp_dates = len(start_test_list)
     # If number of experiment dates <= 2, declare this run to be short.
@@ -1032,6 +1091,7 @@ def runModelExperiments(
     run_is_short = False
     if total_num_exp_dates <= 2:
         run_is_short = True
+    print(f"Number of experiments: {total_num_exp_dates}")
     # String that uniquely identifies this run within a file name
     file_name_core = "_".join([date_today_str, \
                                dataset_name, \
@@ -1448,9 +1508,32 @@ def runModelExperiments(
             #  on coverage rate (x-axis)
             if run_is_short:
                 print("Plotting graph coverage vs hit rate")
-                from riskModelsResultsEval import graphCoverageVsHitRate
-                graphCoverageVsHitRate(hit_count_list_dict, model_idents, models_to_run)
-                graphCoverageVsHitRate(hit_rate_list_dict, model_idents, models_to_run)
+                
+                
+                
+                img_file_core = "_".join([
+                        date_today_str, 
+                        getSixDigitDate(start_test), 
+                        train_len, 
+                        test_len, 
+                        ])
+                
+                img_file_graph_name = f"hitrates_{img_file_core}.png"
+                img_file_graph_full_path = os.path.join(datadir, 
+                                                        img_file_graph_name)
+                
+                
+                
+                graphCoverageVsHitRate(
+                        hit_count_list_dict, 
+                        model_idents, 
+                        models_to_run, 
+                        x_limits=(0, coverage_max), 
+                        title="Hit rate evaluation of models by coverage", 
+                        out_img_file_path = img_file_graph_full_path)
+                #graphCoverageVsHitRate(hit_rate_list_dict, 
+                #                       model_idents, 
+                #                       models_to_run)
             
             
             
@@ -1533,6 +1616,7 @@ def main():
     #geojson_file_name = "Chicago_Areas.geojson"
     #geojson_file_name = "Chicago_South_Side_2790.geojson"
     geojson_file_name = "Durham_27700.geojson"
+    #geojson_file_name = "Police_Force_Areas_December_2016_Durham.geojson"
     # Of all planned experiments, earliest start of a TEST (not train) data set
     #earliest_test_date = "2016-09-01"
     earliest_test_date = "2019-09-01"
@@ -1549,6 +1633,8 @@ def main():
     # Coverage rates to test
     coverage_bounds = "0.01,0.02,0.05,0.10"
     
+    # Highest coverage we want to plot on line graph, if we make one
+    coverage_max = 0.1
     
     
     # Predictive models to run
@@ -1616,6 +1702,7 @@ def main():
             test_date_step_in = test_date_step, 
             coverage_bounds_in = coverage_bounds, 
             models_to_run_in = models_to_run, 
+            coverage_max_in = coverage_max, 
             num_random_in = num_random, 
             phs_time_units_in = phs_time_units, 
             phs_time_bands_in = phs_time_bands, 

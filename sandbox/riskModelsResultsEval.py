@@ -126,7 +126,9 @@ def splitDataByTimespans(datalist, timespan, dateinfoname="eval_date"):
     date_list = sorted(set([d[dateinfoname] for d in datalist]))
     earliest_date = date_list[0]
     latest_date = date_list[-1]
-    daterange_list = generateDateRange(earliest_date, latest_date+_day, timespan)
+    daterange_list = generateDateRange(start=earliest_date, 
+                                       end=latest_date+_day, 
+                                       step=timespan)
     data_by_daterange = defaultdict(list)
     for d in datalist:
         d_time = d[dateinfoname]

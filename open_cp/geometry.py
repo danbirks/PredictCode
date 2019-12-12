@@ -194,6 +194,7 @@ def intersect_timed_points(timed_points, geo):
     #  line. Forcing the slice here to only take the first 2 dimensions
     #  is a workaround until that bug can be understood and fixed.
     points_we_want = set(tuple(pt) for pt in _np.asarray(mp)[:,:2])
+    #points_we_want = set(tuple(pt) for pt in _np.asarray(mp))
     mask = [pt in points_we_want for pt in points]
     mask = _np.array(mask, dtype=_np.bool)
     return timed_points[mask]
