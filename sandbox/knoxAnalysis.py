@@ -683,6 +683,7 @@ def make_graphs_from_knox_file(datadir,
     sbin_size = knox_data[0].sbins[0][1] - knox_data[0].sbins[0][0]
     tbin_size = knox_data[0].tbins[0][1] - knox_data[0].tbins[0][0]
     
+    
     for exp_num, exp in enumerate(knox_data):
         
         knox_grid_file_base = "knox_grid_"
@@ -731,7 +732,9 @@ def make_graphs_from_knox_file(datadir,
         ax.legend(bandwidth_selections)
         ax.set_title("Spatial bandwidths determined by Knox")
         ax.set(xlabel="End date of test")
-        ax.set(ylim=(0-(max_y*jitter_factor), max_y*(1+len(bandwidth_selections)*jitter_factor)), ylabel="Meters")
+        y_axis_min = min(-1,0-(max_y*jitter_factor))
+        y_axis_max = max(1,max_y*(1+len(bandwidth_selections)*jitter_factor))
+        ax.set(ylim=(y_axis_min, y_axis_max), ylabel="Meters")
         
         plot_file_path = os.path.join(datadir, 
                                       "knox_timeplot" + plot_file_base)
@@ -747,7 +750,9 @@ def make_graphs_from_knox_file(datadir,
         ax.legend(bandwidth_selections)
         ax.set_title("Temporal bandwidths determined by Knox")
         ax.set(xlabel="End date of test")
-        ax.set(ylim=(0-(max_y*jitter_factor), max_y*(1+len(bandwidth_selections)*jitter_factor)), ylabel="Days")
+        y_axis_min = min(-1,0-(max_y*jitter_factor))
+        y_axis_max = max(1,max_y*(1+len(bandwidth_selections)*jitter_factor))
+        ax.set(ylim=(y_axis_min, y_axis_max), ylabel="Days")
         
         plot_file_path = os.path.join(datadir, 
                                       "knox_spaceplot" + plot_file_base)
@@ -777,38 +782,94 @@ If running this module as a script instead of importing its functions,
 def main():
     
     
+    dataset = "fantdur"
     
-    # Location of data file
-    datadir = "../../Data"
+    if dataset == "chicago":
+        
+        # Location of data file
+        datadir = "../../Data"
+        
+        # Input csv file name
+        in_csv_file_name = "chi_all_s_BURGLARY_RES_010101_190101_stdXY.csv"
+        
+        # Output file for Knox info
+        knox_file_name = "knoxtestingA.txt"
+        
+        # Geojson file
+        geojson_file_name = "Chicago_South_Side_2790.geojson"
+        
+        crime_types = "BURGLARY"
+        
+        num_knox_iterations = 200
+        
+        #sbin in meters
+        knox_sbin_size = 100
+        knox_sbin_num = 10
+        #tbin in days
+        knox_tbin_size = 7
+        knox_tbin_num = 8
+        
+        # Dates in format YYYY-MM-DD
+        first_test_end = "2017-05-01"
+        time_window_size = "4M"
+        time_step = "1M"
+        num_experiments = 4
+        
+        
+        np.random.seed(seed=0)
+        
+        
+        
+        csv_date_format = "%m/%d/%Y %I:%M:%S %p"
+        csv_longlat = False
+        csv_epsg = None
+        csv_infeet = True
+        csv_has_header = True
+        
     
-    # Input csv file name
-    in_csv_file_name = "chi_all_s_BURGLARY_RES_010101_190101_stdXY.csv"
+    if dataset == "fantdur":
+        
+        # Location of data file
+        datadir = "../../Data"
+        
+        # Input csv file name
+        in_csv_file_name = "Fantasy-Durham-Data_std.csv"
+        
+        # Output file for Knox info
+        knox_file_name = "knoxtestingFD3.txt"
+        
+        # Geojson file
+        geojson_file_name = "Durham_27700.geojson"
+        
+        crime_types = "Burglary, Vehicle crime"
+        
+        num_knox_iterations = 200
+        
+        #sbin in meters
+        knox_sbin_size = 200
+        knox_sbin_num = 10
+        #tbin in days
+        knox_tbin_size = 7
+        knox_tbin_num = 4
+        
+        # Dates in format YYYY-MM-DD
+        first_test_end = "2019-09-01"
+        time_window_size = "1M"
+        time_step = "1W"
+        num_experiments = 1
+        
+        
+        np.random.seed(seed=0)
+        
+        
+        csv_date_format = "%d/%m/%Y"
+        csv_longlat = True
+        csv_epsg = 27700
+        csv_infeet = False
+        csv_has_header = True
     
-    # Output file for Knox info
-    knox_file_name = "knoxtestingA.txt"
-    
-    # Geojson file
-    geojson_file_name = "Chicago_South_Side_2790.geojson"
-    
-    crime_types = "BURGLARY"
-    
-    num_knox_iterations = 200
-    
-    #sbin in meters
-    knox_sbin_size = 100
-    knox_sbin_num = 10
-    #tbin in days
-    knox_tbin_size = 7
-    knox_tbin_num = 8
-    
-    # Dates in format YYYY-MM-DD
-    first_test_end = "2017-05-01"
-    time_window_size = "4M"
-    time_step = "1M"
-    num_experiments = 4
     
     
-    np.random.seed(seed=0)
     
     make_knox_info_file(datadir=datadir, 
                         in_csv_file_name=in_csv_file_name, 
@@ -824,10 +885,15 @@ def main():
                         num_exp=num_experiments, 
                         time_step=time_step, 
                         time_len=time_window_size, 
+                        csv_date_format = csv_date_format, 
+                        csv_longlat = csv_longlat, 
+                        csv_epsg = csv_epsg, 
+                        csv_infeet = csv_infeet, 
+                        csv_has_header = csv_has_header, 
                         )
     
-    
-    
+    print("Finished making Knox info file.")
+    print("Next, reading the file and making graphs.")
     
     
     
