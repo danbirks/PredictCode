@@ -54,7 +54,7 @@ from crimeRiskTimeTools import generateLaterDate, \
                                getTimedPointsInTimeRange, \
                                getSixDigitDate, \
                                shorthandToTimeDelta
-
+import geodataTools as gdt
 
 
 ###
@@ -235,6 +235,7 @@ def plotPointsOnGrid(points,
         sizey = sizex
     
     fig, ax = plt.subplots(figsize=(sizex,sizey))
+    ax.set_aspect(1)
     
     ax.add_patch(PolygonPatch(polygon, fc="none", ec="Black"))
     ax.add_patch(PolygonPatch(polygon, fc="Blue", ec="none", alpha=0.2))
@@ -254,6 +255,10 @@ def plotPointsOnGrid(points,
     
     if title != None:
         ax.set_title(title)
+    
+    
+    #gdf_datapoints = gdt.make_points_frame(points)
+    #gdf_datapoints.to_file("../../Data/tempdatapoints.geojson", driver='GeoJSON')
     
     
     if out_img_file_path != None:
@@ -280,6 +285,9 @@ def plotPointsOnColorGrid(polygon,
                           point_color = "black", 
                           point_shape = "+", 
                           out_img_file_path = None):
+    
+    
+    
     
     if sizey == None:
         sizey = sizex
@@ -369,16 +377,6 @@ def rankMatrixFromSortedCells(masked_matrix,
         sys.exit(1)
     
     rank_matrix = np.zeros_like(masked_matrix.mask, dtype=float)
-    """
-    print("type, shape, rank_matrix:")
-    print(type(rank_matrix))
-    print(rank_matrix.shape)
-    print(rank_matrix)
-    print("type, shape, masked_matrix:")
-    print(type(masked_matrix))
-    print(masked_matrix.shape)
-    print(masked_matrix)
-    """
     
     rank_matrix = masked_matrix.mask_matrix(rank_matrix)
     
@@ -481,28 +479,7 @@ def runPhsModel(training_data, grid, cutoff_time, time_unit, dist_unit, time_ban
     phs_grid_risk = phs_predictor.predict(cutoff_time, cutoff_time)
     
     
-    
-    """
-    phs_grid_risk_matrix = phs_grid_risk.intensity_matrix
-    print("Type of risk matrix:")
-    print(type(phs_grid_risk_matrix))
-    print("Size of risk matrix:")
-    print(phs_grid_risk_matrix.size)
-    print("Shape of risk matrix:")
-    print(phs_grid_risk_matrix.shape)
-    
-    md = phs_grid_risk.mesh_data()
-    print("Type of mesh_data()")
-    print(type(md))
-    for i,x in enumerate(md):
-        print(f"Type of md-{i}")
-        print(type(x))
-        print(f"Shape of md-{i}")
-        print(x.shape)
-        print(x[:5])
-        print(x[-5:])
-    """
-    
+
     
     
     
@@ -548,6 +525,7 @@ def saveModelResultMaps(model_name,
     model_cap = model_name.capitalize()
     heat_title = f"{model_cap} heat map {exp_ident}"
     cov_title = f"{model_cap} coverage map {exp_ident}"
+    
     
     # Save risk heat map
     plotPointsOnColorGrid(polygon = polygon, 
@@ -639,7 +617,7 @@ loadGenericData
 def loadGenericData(filepath, 
                     crime_type_set = {"BURGLARY"}, 
                     date_format_csv = "%m/%d/%Y %I:%M:%S %p", 
-                    epsg = None, 
+                    epsg = 4326, # standard lat/long aka WGS84
                     proj=None, 
                     longlat=False, 
                     infeet=True, 
@@ -926,6 +904,7 @@ def runModelExperiments(
             cell_width_in, 
             in_csv_file_name_in, 
             geojson_file_name_in, 
+            local_epsg_in, 
             earliest_test_date_in, 
             test_date_range_in, 
             train_len_in, 
@@ -955,10 +934,10 @@ def runModelExperiments(
     # Variables with "tkntime" hold the amount of time taken
     
     # Overall timing
-    chktime_overall = time.time()
+    #chktime_overall = time.time()
     
     #### Declare data parameters
-    chktime_decparam = time.time()
+    #chktime_decparam = time.time()
     print("Declaring parameters...")
     
 
@@ -1137,7 +1116,7 @@ def runModelExperiments(
     
     
     print("...declared parameters.")
-    tkntime_decparam = time.time() - chktime_decparam
+    #tkntime_decparam = time.time() - chktime_decparam
     
     
     
@@ -1180,7 +1159,13 @@ def runModelExperiments(
         
         
         # Obtain polygon from geojson file (which should have been pre-processed)
-        region_polygon = gpd.read_file(geojson_full_path).unary_union
+        region_polygon = gpd.read_file(geojson_full_path)
+        # Convert to relevant CRS for local projection
+        
+        region_polygon = region_polygon.to_crs({'init': f'epsg:{local_epsg_in}'})
+        # Take unary union, which also converts region from being
+        #  a GeoDataFrame to a Polygon
+        region_polygon = region_polygon.unary_union
         
         # Get subset of input crime that occurred within region
         points_crime_region = intersect_timed_points(points_crime, region_polygon)
@@ -1203,18 +1188,37 @@ def runModelExperiments(
         
         
         
+        print("TEST --- Saving cells as geojson")
+        gdf_cells = gdt.make_cells_frame(
+                                        masked_grid_region, 
+                                        27700
+                                        )
+        
+        
+        gdf_cells.to_file("../../Data/tempcells.geojson",driver='GeoJSON')
+        
+        sys.exit(0)
         
         
         
         
-        
-        
-        # Get "mesh info" of that grid, which is useful for displaying the map
+        # Get "mesh info" of that grid, which is useful for displaying the map.
+        #  masked_grid_region is type open_cp.data.MaskedGrid
+        #  masked_grid_mesh is type tuple, with 2 elements
+        #   1st element is a list of x-coordinates (in Eastings) for grid
+        #   2nd element is a list of y-coordinates (in Northings) for grid
         masked_grid_mesh = masked_grid_region.mesh_info()
         
         
+        
+        
         # Get tuple of all cells in gridded region
+        # Each cell is represented as a 2-tuple of 0-up indices for the cells
+        #  within the (masked) grid. That is, they are NOT lat/long or E/N
+        #  coordinates, but they can be mapped to those coordinates by
+        #  using masked_grid_mesh, for example
         cellcoordlist_region = getRegionCells(masked_grid_region)
+        
         # Obtain number of cells in the grid that contain relevant geometry
         # (i.e., not the full rectangular grid, only relevant cells)
         num_cells_region = len(cellcoordlist_region)
@@ -1494,6 +1498,11 @@ def runModelExperiments(
                                 )
                                 ))
                         
+                        
+                        
+                        
+                        
+                        
                         # Save heat map and coverage map as image files
                         saveModelResultMaps(
                                 model_name, 
@@ -1622,8 +1631,9 @@ def main():
     # Geojson file
     #geojson_file_name = "Chicago_Areas.geojson"
     #geojson_file_name = "Chicago_South_Side_2790.geojson"
-    geojson_file_name = "Durham_27700.geojson"
-    #geojson_file_name = "Police_Force_Areas_December_2016_Durham.geojson"
+    #geojson_file_name = "Durham_27700.geojson"
+    geojson_file_name = "Police_Force_Areas_December_2016_Durham_fixed.geojson"
+    local_epsg = 27700
     # Of all planned experiments, earliest start of a TEST (not train) data set
     #earliest_test_date = "2016-09-01"
     earliest_test_date = "2019-09-01"
@@ -1671,6 +1681,7 @@ def main():
         geojson_file_name = "Chicago_South_Side_2790.geojson"
         earliest_test_date = "2016-09-01"
         """
+        local_epsg = 2790
         csv_date_format = "%m/%d/%Y %I:%M:%S %p"
         csv_longlat = False
         csv_epsg = None
@@ -1685,6 +1696,7 @@ def main():
         earliest_test_date = "2019-09-01"
         """
         
+        local_epsg = 27700
         csv_date_format = "%d/%m/%Y"
         csv_longlat = True
         csv_epsg = 27700
@@ -1702,6 +1714,7 @@ def main():
             cell_width_in = cell_width, 
             in_csv_file_name_in = in_csv_file_name, 
             geojson_file_name_in = geojson_file_name, 
+            local_epsg_in = local_epsg, 
             earliest_test_date_in = earliest_test_date, 
             test_date_range_in = test_date_range, 
             train_len_in = train_len, 
