@@ -1094,7 +1094,11 @@ def runModelExperiments(
     out_csv_results_full_path = os.path.join(datadir, out_csv_file_name_results)
     # Full path for output csv file of risk info if run is short
     #out_csv_risks_full_path = os.path.join(datadir, out_csv_file_name_risks)
-    # Full path for geojson file
+    # Output geojson file
+    out_geojson_name = f"results_{file_name_core}.geojson"
+    # Full path for output geojson file
+    out_geojson_full_path = os.path.join(datadir, out_geojson_name)
+    # Full path for input geojson file
     geojson_full_path = os.path.join(datadir, geojson_file_name)
     # Append risk_MODEL and rank_MODEL to risk_info_header for each model
     if run_is_short:
@@ -1188,16 +1192,13 @@ def runModelExperiments(
         
         
         
-        print("TEST --- Saving cells as geojson")
+        # Create GeoDataFrame of relevant cells, where each entry has
+        # an associated rectangular geometry corresponding to a cell.
         gdf_cells = gdt.make_cells_frame(
                                         masked_grid_region, 
                                         27700
                                         )
         
-        
-        gdf_cells.to_file("../../Data/tempcells.geojson",driver='GeoJSON')
-        
-        sys.exit(0)
         
         
         
@@ -1251,17 +1252,19 @@ def runModelExperiments(
             
             
             # Obtain training data
-            points_crime_region_train = getTimedPointsInTimeRange(points_crime_region, 
-                                                                  start_train, 
-                                                                  end_train)
+            points_crime_region_train = getTimedPointsInTimeRange(
+                                            points_crime_region, 
+                                            start_train, 
+                                            end_train)
             # Count how many crimes there were in this training data set
             num_crimes_train = len(points_crime_region_train.timestamps)
             
             
             # Obtain testing data
-            points_crime_region_test = getTimedPointsInTimeRange(points_crime_region, 
-                                                                  start_test, 
-                                                                  end_test)
+            points_crime_region_test = getTimedPointsInTimeRange(
+                                            points_crime_region, 
+                                            start_test, 
+                                            end_test)
             # Count how many crimes there were in this test data set
             num_crimes_test = len(points_crime_region_test.timestamps)
             
@@ -1271,14 +1274,16 @@ def runModelExperiments(
                                                      masked_grid_region)
             
             
+            # Display number of crimes in training and testing data
             if exp_date_index % print_exp_freq == 0:
                 print(f"num_crimes_train: {num_crimes_train}")
                 print(f"num_crimes_test: {num_crimes_test}")
             
             
             
-            # If we have few experiments (1 or 2 dates), then we create and save
-            #  map visualisations of the data and models' results.
+            # If we have few experiments (i.e. 1 date), then create and save
+            #  map visualisations of the data here. Later we'll also save
+            #  visualisations of the models' results.
             if run_is_short:
                 
                 print("Making image file names for training and testing data")
@@ -1325,11 +1330,12 @@ def runModelExperiments(
             
             
             
-            # A "data_matrix" contains a risk score for each cell in the grid
-            #  (within the masked region). These scores can then be used to rank
-            #  the cells by risk. Note that different models use different scoring
-            #  systems, so the scores from different data_matrices are not
-            #  directly comparable, unless some normalisation process is used.
+            # A "data_matrix" contains a risk score for each cell in the 
+            #  grid (within the masked region). These scores can then be 
+            #  used to rank the cells by risk. Note that different models 
+            #  use different scoring systems, so the scores from different 
+            #  data_matrices are not directly comparable, unless some 
+            #  normalisation process is used.
             
             # A "sorted_cells" list is a ranked list of cells based on the
             #  previously computed data_matrix. Ties are currently broken by
@@ -1413,7 +1419,8 @@ def runModelExperiments(
                 
                 
                 
-                for exp_index, data_matrix in enumerate(data_matrix_dict[model_name]):
+                for exp_index, data_matrix in enumerate(
+                                                data_matrix_dict[model_name]):
                     
                     if exp_date_index % print_exp_freq == 0:
                         print(f"model_name: {model_name}")
@@ -1490,31 +1497,42 @@ def runModelExperiments(
                         print("Plotting 2 maps for each model")
                         # Plot 2 maps for each model
                         # Create rank matrix
-                        rank_matrix_dict[model_name].append(deepcopy(
-                                rankMatrixFromSortedCells(
-                                        masked_grid_region, 
-                                        sorted_cells_dict[model_name][exp_index], 
-                                        coverage_bounds
+                        new_rank_matrix = rankMatrixFromSortedCells(
+                                    masked_grid_region, 
+                                    sorted_cells_dict[model_name][exp_index], 
+                                    coverage_bounds
                                 )
+                        # Store rank matrix
+                        rank_matrix_dict[model_name].append(deepcopy(
+                                new_rank_matrix
                                 ))
                         
                         
                         
                         
+                        # Store data matrix values in GeoDataFrame
+                        new_exp_ident = model_idents[model_name][exp_index]
+                        new_data_matrix = \
+                            data_matrix_dict[model_name][exp_index]
+                        gdf_cells[new_exp_ident + "-score"] = \
+                            [new_data_matrix[c] for c in cellcoordlist_region]
+                        gdf_cells[new_exp_ident + "-rank"] = \
+                            [new_rank_matrix[c] for c in cellcoordlist_region]
+                        
                         
                         
                         # Save heat map and coverage map as image files
                         saveModelResultMaps(
-                                model_name, 
-                                data_matrix_dict[model_name][exp_index], 
-                                rank_matrix_dict[model_name][exp_index], 
-                                exp_ident = model_idents[model_name][exp_index], 
-                                file_core = img_file_core, 
-                                filedir = datadir, 
-                                polygon = region_polygon, 
-                                points_to_map = points_crime_region_train, 
-                                mesh_info = masked_grid_mesh, 
-                                )
+                            model_name, 
+                            data_matrix_dict[model_name][exp_index], 
+                            rank_matrix_dict[model_name][exp_index], 
+                            exp_ident = model_idents[model_name][exp_index], 
+                            file_core = img_file_core, 
+                            filedir = datadir, 
+                            polygon = region_polygon, 
+                            points_to_map = points_crime_region_train, 
+                            mesh_info = masked_grid_mesh, 
+                            )
                 
                 
             
@@ -1523,6 +1541,13 @@ def runModelExperiments(
             #  comparing hit rates of different models (y-axis) based
             #  on coverage rate (x-axis)
             if run_is_short:
+                
+                # Save GeoDataFrame to file
+                print("Saving results to geojson:")
+                print(out_geojson_full_path)
+                gdt.frame_to_json_with_id(gdf_cells, out_geojson_full_path)
+                
+                
                 print("Plotting graph coverage vs hit rate")
                 
                 

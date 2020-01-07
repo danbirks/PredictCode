@@ -6,20 +6,16 @@ Created on Fri Dec 13 14:49:11 2019
 """
 
 
-
-import sys
+#import sys
 import os
 import geopandas as gpd
 import matplotlib.pyplot as plt
 from itertools import product
 from descartes import PolygonPatch
 from shapely.geometry import Point, Polygon
-#from open_cp.plot import patches_from_grid
-#from matplotlib.collections import PatchCollection
-
-
-
-
+import geojson
+from collections import OrderedDict
+import numpy
 
 
 
@@ -86,7 +82,7 @@ def rect_from_coords_and_size(xcoord,
     
 
 """
-points = open_cp.data.TimedPoints
+
 """
 def make_points_frame(points, 
                       in_epsg, 
@@ -103,8 +99,6 @@ def make_points_frame(points,
     gdf_dict["y"] = ycoords
     gdf_dict["geometry"] = [Point(xy) for xy in zip(xcoords, ycoords)]
     
-    #print(gdf_dict["geometry"])
-    #sys.exit(0)
     
     gdf_datapoints = gpd.GeoDataFrame(gdf_dict)
     
@@ -112,8 +106,8 @@ def make_points_frame(points,
     gdf_datapoints = gdf_datapoints.to_crs({'init': f'epsg:{out_epsg}'})
     
     
-    
     return gdf_datapoints
+
 
 def make_cells_frame(masked_grid, 
                      in_epsg, 
@@ -121,22 +115,7 @@ def make_cells_frame(masked_grid,
                      ):
     
     
-    print(type(masked_grid))
-    print(masked_grid.xsize)
-    print(masked_grid.ysize)
-    print(masked_grid.xoffset)
-    print(masked_grid.yoffset)
-    print(masked_grid.xextent)
-    print(masked_grid.yextent)
-    print(type(masked_grid.mask))
-    print(len(masked_grid.mask))
-    print(len(masked_grid.mask[0]))
-    print(type(masked_grid.mask[0][0]))
-    print(type(masked_grid.mask[50][50]))
-    print(masked_grid.mask[0][0])
-    print(masked_grid.mask[50][50])
-    
-    
+    id_list = []
     x_index_list = []
     y_index_list = []
     x_coord_list = []
@@ -160,6 +139,7 @@ def make_cells_frame(masked_grid,
         x_coord = x_coords[yx_indices[1]]
         y_coord = y_coords[yx_indices[0]]
         cell = rect_from_coords_and_size(x_coord, y_coord, x_size, y_size)
+        id_list.append(f"{yx_indices}")
         x_index_list.append(yx_indices[1])
         y_index_list.append(yx_indices[0])
         x_coord_list.append(x_coord)
@@ -182,9 +162,52 @@ def make_cells_frame(masked_grid,
     
     return gdf_cells
 
-def add_col_to_cells_frame():
-    pass
 
+"""
+frame_to_json_with_id
+
+Save a geodataframe as a geojson file, while also adding an "id" field
+to each feature.
+
+Note that this function uses the "Feature" constructor in the "geojson" 
+module.
+
+This function is necessary due to some unusual interplay between the
+ipyleaflet module's Choropleth constructor and the format of geojson
+files. The Choropleth constructor requires that its input geojson have
+an "id" assigned to each feature. The geopandas function to_file was
+previously used to save the GeoJSON file, with option "driver='GeoJSON'",
+but I could not find a way to assign an id to each feature -- the closest
+I could manage was assigning an id 'property' to each feature, but this
+was not compatible with the Choropleth function of ipyleaflet.
+
+If the Choropleth function is not used, possibly due to discovery of a
+superior way to generate heatmaps on maps, then I recommend reverting
+back to using the to_file function with driver='GeoJSON' for saving the
+GeoJSON file, instead of using this function.
+"""
+def frame_to_json_with_id(frame, json_name):
+    feat_coll_list = []
+    for i in range(frame.shape[0]):
+        this_geometry = frame["geometry"][i]
+        this_properties = OrderedDict()
+        for col_name in frame.columns:
+            if col_name == "geometry":
+                continue
+            value = frame[col_name][i]
+            if type(value)==numpy.int64:
+                value = int(value)
+            this_properties[col_name] = value
+        this_id = str((this_properties["y_index"],this_properties["x_index"]))
+        feat_coll_list.append(geojson.Feature(
+                                geometry = this_geometry,
+                                properties = this_properties,
+                                id = this_id))
+    feat_coll = geojson.FeatureCollection(feat_coll_list)
+    
+    with open(json_name,"w") as f:
+        geojson.dump(feat_coll, f)
+    return
 
 
 
