@@ -257,8 +257,6 @@ def plotPointsOnGrid(points,
         ax.set_title(title)
     
     
-    #gdf_datapoints = gdt.make_points_frame(points)
-    #gdf_datapoints.to_file("../../Data/tempdatapoints.geojson", driver='GeoJSON')
     
     
     if out_img_file_path != None:
@@ -1094,12 +1092,20 @@ def runModelExperiments(
     out_csv_results_full_path = os.path.join(datadir, out_csv_file_name_results)
     # Full path for output csv file of risk info if run is short
     #out_csv_risks_full_path = os.path.join(datadir, out_csv_file_name_risks)
-    # Output geojson file
-    out_geojson_name = f"results_{file_name_core}.geojson"
-    # Full path for output geojson file
-    out_geojson_full_path = os.path.join(datadir, out_geojson_name)
+    # Output geojson training data file
+    out_train_geojson_name = f"train_{file_name_core}.geojson"
+    # Full path for output geojson training data file
+    out_train_geojson_full_path = os.path.join(datadir, out_train_geojson_name)
+    # Output geojson testing data file
+    out_test_geojson_name = f"test_{file_name_core}.geojson"
+    # Full path for output geojson testing data file
+    out_test_geojson_full_path = os.path.join(datadir, out_test_geojson_name)
+    # Output geojson results file
+    out_res_geojson_name = f"results_{file_name_core}.geojson"
+    # Full path for output geojson results file
+    out_res_geojson_full_path = os.path.join(datadir, out_res_geojson_name)
     # Full path for input geojson file
-    geojson_full_path = os.path.join(datadir, geojson_file_name)
+    in_geojson_full_path = os.path.join(datadir, geojson_file_name)
     # Append risk_MODEL and rank_MODEL to risk_info_header for each model
     if run_is_short:
         for model_name in models_to_run:
@@ -1112,9 +1118,9 @@ def runModelExperiments(
         print(f"File does not exist: {in_csv_full_path}")
         print("Exiting...")
         sys.exit(1)
-    if not os.path.isfile(geojson_full_path):
+    if not os.path.isfile(in_geojson_full_path):
         print("Error!")
-        print(f"File does not exist: {geojson_full_path}")
+        print(f"File does not exist: {in_geojson_full_path}")
         print("Exiting...")
         sys.exit(1)
     
@@ -1163,7 +1169,7 @@ def runModelExperiments(
         
         
         # Obtain polygon from geojson file (which should have been pre-processed)
-        region_polygon = gpd.read_file(geojson_full_path)
+        region_polygon = gpd.read_file(in_geojson_full_path)
         # Convert to relevant CRS for local projection
         
         region_polygon = region_polygon.to_crs({'init': f'epsg:{local_epsg_in}'})
@@ -1260,6 +1266,14 @@ def runModelExperiments(
             num_crimes_train = len(points_crime_region_train.timestamps)
             
             
+            gdf_datapoints_train = \
+                        gdt.make_points_frame(points_crime_region_train, 
+                                              csv_epsg)
+            gdf_datapoints_train.to_file(out_train_geojson_full_path,
+                                   driver='GeoJSON')
+            
+            
+            
             # Obtain testing data
             points_crime_region_test = getTimedPointsInTimeRange(
                                             points_crime_region, 
@@ -1272,6 +1286,14 @@ def runModelExperiments(
             #  This is used for evaluation.
             cells_testcrime_ctr = countPointsPerCell(points_crime_region_test, 
                                                      masked_grid_region)
+            
+            
+            
+            gdf_datapoints_test = \
+                        gdt.make_points_frame(points_crime_region_test, 
+                                              csv_epsg)
+            gdf_datapoints_test.to_file(out_test_geojson_full_path,
+                                   driver='GeoJSON')
             
             
             # Display number of crimes in training and testing data
@@ -1544,8 +1566,9 @@ def runModelExperiments(
                 
                 # Save GeoDataFrame to file
                 print("Saving results to geojson:")
-                print(out_geojson_full_path)
-                gdt.frame_to_json_with_id(gdf_cells, out_geojson_full_path)
+                print(out_res_geojson_full_path)
+                gdt.frame_to_json_with_id(gdf_cells, 
+                                          out_res_geojson_full_path)
                 
                 
                 print("Plotting graph coverage vs hit rate")

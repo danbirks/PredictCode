@@ -211,7 +211,15 @@ def frame_to_json_with_id(frame, json_name):
 
 
 
-
+def list_risk_model_properties(geojson_file):
+    cell_results = gpd.read_file(geojson_file)
+    ignore_properties = ["id", \
+                         "x_index", \
+                         "y_index", \
+                         "x_coord", \
+                         "y_coord", \
+                         "geometry"]
+    return [p for p in cell_results.columns if p not in ignore_properties]
 
 
 
