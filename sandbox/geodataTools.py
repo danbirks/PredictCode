@@ -14,9 +14,10 @@ from itertools import product
 from descartes import PolygonPatch
 from shapely.geometry import Point, Polygon
 import geojson
+import json
 from collections import OrderedDict
 import numpy
-
+import ipyleaflet
 
 
 
@@ -233,6 +234,20 @@ def top_geojson_features(geojson_file, sort_property, top_portion=0.01):
     num_features = len(sorted_frame.index)
     top_num_features = int(top_portion * num_features)
     return sorted_frame[:top_num_features]
+
+
+def marker_cluster_from_data(geojson_file):
+    with open(geojson_file) as eg:
+        datapoints = json.load(eg)
+    marker_list = []
+    for feat in datapoints['features']:
+        loc = feat['geometry']['coordinates'][::-1]
+        marker_list.append(ipyleaflet.CircleMarker(location=loc))
+    marker_cluster = ipyleaflet.MarkerCluster(markers=marker_list)
+    return marker_cluster
+
+
+
 
 
 def get_superclass(c):

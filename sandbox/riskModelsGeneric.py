@@ -450,30 +450,58 @@ weight          : "linear" or "classic"
                   "linear" = use phs.LinearWeightNormalised
                   "classic" = use phs.ClassicWeightNormalised
 """
-def runPhsModel(training_data, grid, cutoff_time, time_unit, dist_unit, time_bandwidth, dist_bandwidth, weight="linear"):
+def runPhsModel(training_data, 
+                grid, 
+                cutoff_time, 
+                time_unit, 
+                dist_unit, 
+                time_bandwidth, 
+                dist_bandwidth, 
+                weight="linear", 
+                ignore_eventless_end=False):
     
+    weight_options = ["linear", "classic"]
+    weight = weight.lower()
+    if weight not in weight_options:
+        print("Error! Unexpected PHS weight parameter.")
+        print(f"Weight options: {weight_options}")
+        print(f"Specified weight: {weight}")
+        sys.exit(1)
     
-    # Obtain model and prediction on grid cells
+    # Instantiate the PHS predictor model with the grid cells
     phs_predictor = phs.ProspectiveHotSpot(grid=grid)
+    
+    # Supply training data to the predictor
     phs_predictor.data = training_data
     
+    # Compute bandwidth sizes in terms of their units
     dist_band_in_units = dist_bandwidth/dist_unit
     time_band_in_units = time_bandwidth/time_unit
     
+    # Set the weight function for the predictor
+    
+    # Linear weight: (1-(dist)) * (1-(time))
     if weight=="linear":
         phs_predictor.weight = phs.LinearWeightNormalised(space_bandwidth=dist_band_in_units, time_bandwidth=time_band_in_units)
+    
+    # Classic weight: ((2/(1+dist))-1) * ((2/(1+time))-1)
     elif weight=="classic":
         phs_predictor.weight = phs.ClassicWeightNormalised(space_bandwidth=dist_band_in_units, time_bandwidth=time_band_in_units)
     
+    # Set the units for the predictor
     phs_predictor.grid = dist_unit
     phs_predictor.time_unit = time_unit
     
     # Only include this method of establishing cutoff_time if we want a
     #  prediction for the day after the latest event in training data. If so,
-    #  this will ignore any event-less period of time between training and
-    #  test data, which means time decay may be less pronounced.
-    #cutoff_time = sorted(training_data.timestamps)[-1] + _day
+    #  this will ignore any event-less period of time between the final
+    #  event in the training data and the start of the test data, which 
+    #  means time decay may be less pronounced.
+    if ignore_eventless_end:
+        cutoff_time = sorted(training_data.timestamps)[-1]
+        cutoff_time += np.timedelta64(1,"D")
     
+    # Compute the risk scores for all cells in the grid
     phs_grid_risk = phs_predictor.predict(cutoff_time, cutoff_time)
     
     
