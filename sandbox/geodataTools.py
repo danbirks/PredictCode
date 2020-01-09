@@ -223,8 +223,20 @@ def list_risk_model_properties(geojson_file):
 
 
 
+def sort_geojson_features(geojson_file, sort_property):
+    cell_results = gpd.read_file(geojson_file)
+    return cell_results.sort_values(by=sort_property, ascending=False)
+    
+
+def top_geojson_features(geojson_file, sort_property, top_portion=0.01):
+    sorted_frame = sort_geojson_features(geojson_file, sort_property)
+    num_features = len(sorted_frame.index)
+    top_num_features = int(top_portion * num_features)
+    return sorted_frame[:top_num_features]
 
 
+def get_superclass(c):
+    return [b.__name__ for b in c.__class__.__bases__]
 
 
 """
