@@ -44,7 +44,7 @@ from open_cp.geometry import intersect_timed_points, \
                              mask_grid_by_intersection
 from open_cp.plot import patches_from_grid
 import open_cp.prohotspot as phs
-
+from open_cp.predictors import GridPredictionArray
 
 
 # Load custom functions that make dealing with datetime and timedelta easier
@@ -458,6 +458,7 @@ def runPhsModel(training_data,
                 time_bandwidth, 
                 dist_bandwidth, 
                 weight="linear", 
+                spread="grid", 
                 ignore_eventless_end=False):
     
     weight_options = ["linear", "classic"]
@@ -468,49 +469,90 @@ def runPhsModel(training_data,
         print(f"Specified weight: {weight}")
         sys.exit(1)
     
-    # Instantiate the PHS predictor model with the grid cells
-    phs_predictor = phs.ProspectiveHotSpot(grid=grid)
+    spread_options = ["grid","continuous"]
+    spread = spread.lower()
+    if spread not in spread_options:
+        print("Error! Unexpected PHS spread parameter.")
+        print(f"Spread options: {spread_options}")
+        print(f"Specified weight: {spread}")
+        sys.exit(1)
     
-    # Supply training data to the predictor
-    phs_predictor.data = training_data
     
     # Compute bandwidth sizes in terms of their units
     dist_band_in_units = dist_bandwidth/dist_unit
     time_band_in_units = time_bandwidth/time_unit
     
-    # Set the weight function for the predictor
-    
+    # Prepare the weight function for the predictor
+    normalised_weight = None
     # Linear weight: (1-(dist)) * (1-(time))
     if weight=="linear":
-        phs_predictor.weight = phs.LinearWeightNormalised(space_bandwidth=dist_band_in_units, time_bandwidth=time_band_in_units)
-    
+        normalised_weight = phs.LinearWeightNormalised(
+                                    space_bandwidth=dist_band_in_units, 
+                                    time_bandwidth=time_band_in_units)
     # Classic weight: ((2/(1+dist))-1) * ((2/(1+time))-1)
     elif weight=="classic":
-        phs_predictor.weight = phs.ClassicWeightNormalised(space_bandwidth=dist_band_in_units, time_bandwidth=time_band_in_units)
-    
-    # Set the units for the predictor
-    phs_predictor.grid = dist_unit
-    phs_predictor.time_unit = time_unit
-    
-    # Only include this method of establishing cutoff_time if we want a
-    #  prediction for the day after the latest event in training data. If so,
-    #  this will ignore any event-less period of time between the final
-    #  event in the training data and the start of the test data, which 
-    #  means time decay may be less pronounced.
-    if ignore_eventless_end:
-        cutoff_time = sorted(training_data.timestamps)[-1]
-        cutoff_time += np.timedelta64(1,"D")
-    
-    # Compute the risk scores for all cells in the grid
-    phs_grid_risk = phs_predictor.predict(cutoff_time, cutoff_time)
+        normalised_weight = phs.ClassicWeightNormalised(
+                                    space_bandwidth=dist_band_in_units, 
+                                    time_bandwidth=time_band_in_units)
     
     
-
+    if spread == "grid":
+        
+        # Instantiate the PHS predictor model with the grid cells
+        phs_predictor = phs.ProspectiveHotSpot(grid=grid)
+        
+        # Supply training data to the predictor
+        phs_predictor.data = training_data
+        
+        # Set the weight function for the predictor
+        phs_predictor.weight = normalised_weight
+        
+        # Set the units for the predictor
+        phs_predictor.grid = dist_unit
+        phs_predictor.time_unit = time_unit
+        
+        # Only include this method of establishing cutoff_time if we want a
+        #  prediction for the day after the latest event in training data. If so,
+        #  this will ignore any event-less period of time between the final
+        #  event in the training data and the start of the test data, which 
+        #  means time decay may be less pronounced.
+        if ignore_eventless_end:
+            cutoff_time = sorted(training_data.timestamps)[-1]
+            cutoff_time += np.timedelta64(1,"D")
+        
+        # Compute the risk scores for all cells in the grid
+        phs_grid_risk = phs_predictor.predict(cutoff_time, cutoff_time)
+        
+        # Mask the risk matrix to the relevant region, return it
+        return grid.mask_matrix(phs_grid_risk.intensity_matrix)
+    
+    elif spread == "continuous":
+        
+        cts_predictor = phs.ProspectiveHotSpotContinuous()
+        cts_predictor.data = training_data
+        cts_predictor.grid = grid.xsize
+        
+        # Set the weight function for the predictor
+        cts_predictor.weight = normalised_weight
+        
+        cts_prediction = cts_predictor.predict(cutoff_time, cutoff_time)
+        
+        cts_prediction.samples = 50
+        
+        cts_grid_risk = GridPredictionArray.from_continuous_prediction_region(
+                cts_prediction, 
+                grid.region(), 
+                grid.xsize, 
+                grid.ysize)
+        
+        return grid.mask_matrix(cts_grid_risk.intensity_matrix)
     
     
     
-    # Mask the risk matrix to the relevant region, return it
-    return grid.mask_matrix(phs_grid_risk.intensity_matrix)
+    
+    
+    
+    
     
 
 
@@ -945,6 +987,7 @@ def runModelExperiments(
             phs_dist_units_in = None, 
             phs_dist_bands_in = None, 
             phs_weight_in = None, 
+            phs_spread_in = None, 
             print_exp_freq_in = 1, 
             csv_date_format = "%m/%d/%Y %I:%M:%S %p", 
             csv_longlat = False, 
@@ -1013,6 +1056,7 @@ def runModelExperiments(
                 sys.exit(1)
         phs_dist_bands = [int(x) for x in splitCommaArgs(phs_dist_bands_in)]
         phs_weight = splitCommaArgs(phs_weight_in)
+        phs_spread = splitCommaArgs(phs_spread_in)
     print_exp_freq = int(print_exp_freq_in)
     coverage_max = coverage_bounds[-1]
     if coverage_max_in != None:
@@ -1057,12 +1101,13 @@ def runModelExperiments(
                            phs_time_bands, 
                            phs_dist_units, 
                            phs_dist_bands, 
-                           phs_weight]
+                           phs_weight, 
+                           phs_spread]
         model_param_dict["phs"] = list(product(*poss_phs_params))
         params_to_iter = []
         for p_list in poss_phs_params:
             if len(p_list)>1:
-                params_to_iter.append([str(x) for x in p_list])
+                params_to_iter.append([str(x)[:4] for x in p_list])
         model_params_short["phs"] = \
                         ["-".join(p) for p in product(*params_to_iter)]
     model_idents = dict()
@@ -1442,6 +1487,7 @@ def runModelExperiments(
                         phs_dist_unit = int(params_combo[2])
                         phs_dist_band = int(params_combo[3])
                         phs_weight = params_combo[4]
+                        phs_spread = params_combo[5]
                         
                         data_matrix_dict[model_name].append(deepcopy(runPhsModel(
                                 training_data=points_crime_region_train, 
@@ -1451,7 +1497,8 @@ def runModelExperiments(
                                 dist_unit=phs_dist_unit, 
                                 time_bandwidth=phs_time_band, 
                                 dist_bandwidth=phs_dist_band, 
-                                weight=phs_weight
+                                weight=phs_weight, 
+                                spread=phs_spread
                                 )))
                 elif model_name == "ideal":
                     data_matrix_dict[model_name].append(deepcopy(runNaiveModel(
@@ -1473,8 +1520,8 @@ def runModelExperiments(
                                                 data_matrix_dict[model_name]):
                     
                     if exp_date_index % print_exp_freq == 0:
-                        print(f"model_name: {model_name}")
-                        print(f"parameter set #: {exp_index}")
+                        print(f"model_name: {model_name}" + \
+                              "\t" + f"parameter set #: {exp_index}")
                     sorted_cells_dict[model_name].append(deepcopy(
                             sortCellsByRiskMatrix(
                                 cellcoordlist_region, 
@@ -1544,7 +1591,7 @@ def runModelExperiments(
                         
                         
                     if run_is_short:
-                        print("Plotting 2 maps for each model")
+                        
                         # Plot 2 maps for each model
                         # Create rank matrix
                         new_rank_matrix = rankMatrixFromSortedCells(
@@ -1742,6 +1789,7 @@ def main():
     phs_dist_units = "500"
     phs_dist_bands = "500,1000,1500"
     phs_weight = "classic"
+    phs_spread = "continuous"
     
     
     # How frequently to display a print statement about an experiment
@@ -1805,6 +1853,7 @@ def main():
             phs_dist_units_in = phs_dist_units, 
             phs_dist_bands_in = phs_dist_bands, 
             phs_weight_in = phs_weight, 
+            phs_spread_in = phs_spread, 
             print_exp_freq_in = print_exp_freq, 
             csv_date_format = csv_date_format, 
             csv_longlat = csv_longlat, 
