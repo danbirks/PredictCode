@@ -590,9 +590,8 @@ def saveModelResultMaps(model_name,
     img_file_cov_name += ".png"
     img_file_cov_fullpath = os.path.join(filedir, img_file_cov_name)
     
-    model_cap = model_name.capitalize()
-    heat_title = f"{model_cap} heat map {exp_ident}"
-    cov_title = f"{model_cap} coverage map {exp_ident}"
+    heat_title = f"Heat map {exp_ident}"
+    cov_title = f"Coverage map {exp_ident}"
     
     
     # Save risk heat map
@@ -689,7 +688,7 @@ def loadGenericData(filepath,
                     proj=None, 
                     longlat=False, 
                     infeet=True, 
-                    has_header=True):
+                    col_names = None):
     
     # Note: Data is expected in a csv file with the following properties:
     # Row 0 = Header
@@ -711,6 +710,7 @@ def loadGenericData(filepath,
     #!!! Also change "infeet" issues at standardizing stage too!!!
     
     
+    _FEET_IN_METERS = 3937 / 1200
     
     if longlat:
         try:
@@ -727,21 +727,41 @@ def loadGenericData(filepath,
             proj = _proj.Proj({"init": "epsg:"+str(epsg)})
     
     
-    _FEET_IN_METERS = 3937 / 1200
     data = []
-    with open(filepath) as f:
+    cn_map = dict()
+    with open(filepath, encoding='utf-8-sig') as f:
         csvreader = csv.reader(f)
-        if has_header:
-            _ = next(csvreader)
+        if col_names == None:
+            col_names = ["date","east","north","crime"]
+            for i, cn in enumerate(col_names):
+                cn_map[cn] = i
+        if col_names != None:
+            header_row = next(csvreader)
+            header_row = [x.strip() for x in header_row]
+            for cn in col_names:
+                try:
+                    cn_map[cn] = header_row.index(cn)
+                except ValueError:
+                    print("Error! Unrecognised input column name!")
+                    print(f"  Specified column: \"{cn}\"")
+                    print(f"  Detected columns: "+\
+                          ",".join([f"\"{x}\"" for x in header_row]))
+                    print("  Detected column names: " + \
+                        ",".join(['\"'+str(x)+'\"' for x in header_row]))
+                    print("  Detected column names: " + \
+                        ",".join([str([ord(v) for v in x]) for x in header_row]))
+                    sys.exit(1)
+                
         for row in csvreader:
             # Confirm crime type is one we're interested in
-            crime_type = row[3].strip()
+            crime_type = row[cn_map[col_names[3]]].strip()
             if crime_type not in crime_type_set:
                 continue
             # Grab time, x, and y values (x & y may be long & lat)
-            t = datetime.datetime.strptime(row[0], date_format_csv)
-            x = float(row[1])
-            y = float(row[2])
+            t = datetime.datetime.strptime(row[cn_map[col_names[0]]], 
+                                           date_format_csv)
+            x = float(row[cn_map[col_names[1]]])
+            y = float(row[cn_map[col_names[2]]])
             if longlat:
                 x, y = proj(x, y)
             else:
@@ -993,7 +1013,7 @@ def runModelExperiments(
             csv_longlat = False, 
             csv_epsg = None, 
             csv_infeet = True, 
-            csv_has_header = True, 
+            csv_col_names = None, 
             ):
     
     
@@ -1235,7 +1255,7 @@ def runModelExperiments(
                                        longlat=csv_longlat, 
                                        epsg = csv_epsg, 
                                        infeet=csv_infeet, 
-                                       has_header = csv_has_header)
+                                       col_names = csv_col_names)
         
         num_crimes_total = len(points_crime.timestamps)
         print(f"Total number of relevant crimes: {num_crimes_total}")
@@ -1342,6 +1362,7 @@ def runModelExperiments(
             gdf_datapoints_train = \
                         gdt.make_points_frame(points_crime_region_train, 
                                               csv_epsg)
+            print(f"Writing training data to {out_train_geojson_full_path}")
             gdf_datapoints_train.to_file(out_train_geojson_full_path,
                                    driver='GeoJSON')
             
@@ -1361,11 +1382,13 @@ def runModelExperiments(
                                                      masked_grid_region)
             
             
-            
-            gdf_datapoints_test = \
-                        gdt.make_points_frame(points_crime_region_test, 
-                                              csv_epsg)
-            gdf_datapoints_test.to_file(out_test_geojson_full_path,
+            if num_crimes_test > 0:
+                gdf_datapoints_test = gdt.make_points_frame(
+                                                points_crime_region_test, 
+                                                csv_epsg)
+                print(f"Writing testing data to "+\
+                          f"{out_test_geojson_full_path}")
+                gdf_datapoints_test.to_file(out_test_geojson_full_path,
                                    driver='GeoJSON')
             
             
@@ -1405,19 +1428,22 @@ def runModelExperiments(
                 plotPointsOnGrid(points_crime_region_train, 
                                  masked_grid_region, 
                                  region_polygon, 
-                                 title=f"Train data {exp_date_index}", 
+                                 title=f"Train data {exp_date_index}:"+\
+                                         f" {num_crimes_train} crimes", 
                                  sizex=10, 
                                  sizey=10, 
                                  out_img_file_path=img_file_train_full_path)
                 
-                # Plot testing data on plain grid
-                plotPointsOnGrid(points_crime_region_test, 
-                                 masked_grid_region, 
-                                 region_polygon, 
-                                 title=f"Test data {exp_date_index}", 
-                                 sizex=10, 
-                                 sizey=10, 
-                                 out_img_file_path=img_file_test_full_path)
+                if num_crimes_test > 0:
+                    # Plot testing data on plain grid
+                    plotPointsOnGrid(points_crime_region_test, 
+                                     masked_grid_region, 
+                                     region_polygon, 
+                                     title=f"Test data {exp_date_index};"+\
+                                         f" {num_crimes_test} crimes", 
+                                     sizex=10, 
+                                     sizey=10, 
+                                     out_img_file_path=img_file_test_full_path)
                 
                 
                 
@@ -1645,34 +1671,32 @@ def runModelExperiments(
                 gdt.frame_to_json_with_id(gdf_cells, 
                                           out_res_geojson_full_path)
                 
-                
-                print("Plotting graph coverage vs hit rate")
-                
-                
-                
-                img_file_core = "_".join([
-                        date_today_str, 
-                        getSixDigitDate(start_test), 
-                        train_len, 
-                        test_len, 
-                        ])
-                
-                img_file_graph_name = f"hitrates_{img_file_core}.png"
-                img_file_graph_full_path = os.path.join(datadir, 
+                # Don't bother graphing if there's no test data
+                if num_crimes_test > 0:
+                    
+                    print("Plotting graph coverage vs hit rate")
+                    
+                    img_file_core = "_".join([
+                            date_today_str, 
+                            getSixDigitDate(start_test), 
+                            train_len, 
+                            test_len, 
+                            ])
+                    
+                    img_file_graph_name = f"hitrates_{img_file_core}.png"
+                    img_file_graph_full_path = os.path.join(datadir, 
                                                         img_file_graph_name)
-                
-                
-                
-                graphCoverageVsHitRate(
-                        hit_count_list_dict, 
-                        model_idents, 
-                        models_to_run, 
-                        x_limits=(0, coverage_max), 
-                        title="Hit rate evaluation of models by coverage", 
-                        out_img_file_path = img_file_graph_full_path)
-                #graphCoverageVsHitRate(hit_rate_list_dict, 
-                #                       model_idents, 
-                #                       models_to_run)
+                    
+                    graphCoverageVsHitRate(
+                            hit_count_list_dict, 
+                            model_idents, 
+                            models_to_run, 
+                            x_limits=(0, coverage_max), 
+                            title="Hit rate evaluation of models by coverage", 
+                            out_img_file_path = img_file_graph_full_path)
+                    #graphCoverageVsHitRate(hit_rate_list_dict, 
+                    #                       model_idents, 
+                    #                       models_to_run)
             
             
             
@@ -1750,7 +1774,8 @@ def main():
     cell_width = 500
     # Input csv file name
     #in_csv_file_name = "chi_all_s_BURGLARY_RES_010101_190101_stdXY.csv"
-    in_csv_file_name = "Fantasy-Durham-Data_std.csv"
+    #in_csv_file_name = "Fantasy-Durham-Data_std.csv"
+    in_csv_file_name = "Fantasy-Durham-Data.csv"
     # Geojson file
     #geojson_file_name = "Chicago_Areas.geojson"
     #geojson_file_name = "Chicago_South_Side_2790.geojson"
@@ -1765,11 +1790,11 @@ def main():
     # Length of training data
     train_len = "4W"
     # Length of testing data
-    test_len = "1W"
+    test_len = "0D"
     # Time step offset between different experiments
     # (If you want non-overlapping, then set test_date_step = test_len)
-    #test_date_step = "1D"
-    test_date_step = None
+    test_date_step = "1W"
+    #test_date_step = None
     # Coverage rates to test
     coverage_bounds = "0.01,0.02,0.05,0.10"
     
@@ -1779,15 +1804,15 @@ def main():
     
     # Predictive models to run
     #models_to_run = "random,naive,phs,ideal"
-    models_to_run = "random,naive,phs,ideal"
+    models_to_run = "random,naive,ideal"
     
     num_random = 1
     
     # Param list for PHS model.
     phs_time_units = "1W"
-    phs_time_bands = "4W,6W"
+    phs_time_bands = "4W"
     phs_dist_units = "500"
-    phs_dist_bands = "500,1000,1500"
+    phs_dist_bands = "500"
     phs_weight = "classic"
     phs_spread = "continuous"
     
@@ -1810,7 +1835,7 @@ def main():
         csv_longlat = False
         csv_epsg = None
         csv_infeet = True
-        csv_has_header = True
+        csv_col_names = None
     
     if dataset_name == "FantDur":
         """
@@ -1825,10 +1850,12 @@ def main():
         csv_longlat = True
         csv_epsg = 27700
         csv_infeet = False
-        csv_has_header = True
-    
-    
-    
+        
+        date_name = "Date"
+        east_name = "Longitude"
+        north_name = "Latitude"
+        crimetypes_name = "Crime type"    
+        csv_col_names = [date_name, east_name, north_name, crimetypes_name]
     
     
     runModelExperiments(
@@ -1859,7 +1886,7 @@ def main():
             csv_longlat = csv_longlat, 
             csv_epsg = csv_epsg, 
             csv_infeet = csv_infeet, 
-            csv_has_header = csv_has_header, 
+            csv_col_names = csv_col_names, 
             )
     
     

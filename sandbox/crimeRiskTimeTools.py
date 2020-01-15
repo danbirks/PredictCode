@@ -134,9 +134,11 @@ def generateEarlierDate(end, step):
 # Given a TimedPoints object that contains spatial coordinates paired
 #  with timestamps, return a similar object that only contains the
 #  data whose timestamps are within the given range
+# Note that this returns points whose times are GREATER OR EQUAL to 
+#  the start time, but STRICTLY LESS THAN the end time.
 def getTimedPointsInTimeRange(points, start_time, end_time):
     return points[(points.timestamps >= start_time)
-                  & (points.timestamps <= end_time)]
+                  & (points.timestamps < end_time)]
 
 
 def getSixDigitDate(in_date):

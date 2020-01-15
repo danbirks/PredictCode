@@ -6,7 +6,7 @@ Created on Fri Dec 13 14:49:11 2019
 """
 
 
-#import sys
+import sys
 import os
 import geopandas as gpd
 import matplotlib.pyplot as plt
@@ -212,15 +212,30 @@ def frame_to_json_with_id(frame, json_name):
 
 
 
-def list_risk_model_properties(geojson_file):
-    cell_results = gpd.read_file(geojson_file)
+def list_risk_model_properties(geojson_file_name=None,
+                             geojson_file_contents=None):
+    
     ignore_properties = ["id", \
                          "x_index", \
                          "y_index", \
                          "x_coord", \
                          "y_coord", \
                          "geometry"]
-    return [p for p in cell_results.columns if p not in ignore_properties]
+    
+    cell_results = geojson_file_contents
+    if cell_results == None:
+        if geojson_file_name != None:
+            with open(geojson_file_name) as eg:
+                cell_results = json.load(eg)
+            return [p for p in cell_results.columns \
+                            if p not in ignore_properties]
+        else:
+            print("Error! Must supply either geojson_file_name or "+\
+                  "geojson_file_contents to list_risk_model_properties")
+            sys.exit(1)
+    
+    return [p for p in cell_results["features"][0]["properties"] \
+                if p not in ignore_properties]
 
 
 
