@@ -18,6 +18,7 @@ import json
 from collections import OrderedDict
 import numpy
 import ipyleaflet
+from copy import deepcopy
 
 
 
@@ -262,7 +263,104 @@ def marker_cluster_from_data(geojson_file):
     return marker_cluster
 
 
+"""
+normalise_geojson_features
 
+geojson_data : If this is a string, then assume it is the name of a
+                geojson file, and read in the data.
+               If this is not a string, assume it is the data read from
+                a geojson file (which would be a dict object).
+norm_property : The feature property to normalise
+norm_type : If "max" then scale the values via linear transformation so that
+             the largest is 1 and smallest is 0.
+             This is achieved by:
+                 1st) Subtract smallest value from all values.
+                 2nd) Divide all values by (now) largest value
+            If "sum" then scale the values via linear transformation so that
+             the sum of all values totals 1.
+             This is achieved by dividing all values by the sum of all
+              the original values.
+"""
+def normalise_geojson_features(geojson_data,
+                               norm_property, 
+                               norm_type="max"
+                               ):
+    
+    norm_type = norm_type.lower()
+    recognised_norm_types = ["max","sum"]
+    if norm_type not in recognised_norm_types:
+        print("Error! Unexpected norm_type for normalise_geojson_features!")
+        print(f"Given norm_type: {norm_type}")
+        print(f"Recognised options: {recognised_norm_types}")
+        sys.exit(1)
+    
+    # If the data is a string, then assume it's a file name to read.
+    #  Otherwise, assume it's the data (dict) itself
+    if type(geojson_data) == str:
+        with open(geojson_data) as gf:
+            geojson_data = json.load(gf)
+    
+    
+    value_list = [x['properties'][norm_property] for x in geojson_data['features']]
+    
+    if norm_type == "max":
+        min_val = min(value_list)
+        max_val = max(value_list)
+        norm_data = deepcopy(geojson_data)
+        for feat in norm_data['features']:
+            feat['properties'][norm_property] -= min_val
+            feat['properties'][norm_property] /= max_val
+    elif norm_type == "sum":
+        val_sum = sum(value_list)
+        norm_data = deepcopy(geojson_data)
+        for feat in norm_data['features']:
+            feat['properties'][norm_property] /= val_sum
+    
+    return norm_data
+    
+
+"""
+def combine_geojson_features(combine_property, 
+                             geojson_data_1,
+                             geojson_data_2,
+                             multiplier_1,
+                             multiplier_2,
+                             normalisation="max",
+                             ):
+    
+    # If the data is a string, then assume it's a file name to read.
+    #  Otherwise, assume it's the data (dict) itself
+    if type(geojson_data_1) == str:
+        with open(geojson_data_1) as gf1:
+            geojson_data_1 = json.load(gf1)
+    if type(geojson_data_2) == str:
+        with open(geojson_data_2) as gf2:
+            geojson_data_2 = json.load(gf2)
+    
+    if type(normalisation)==str:
+        normalisation = normalisation.lower()
+    recognised_norm_types = ["max","sum","none",None,False]
+    if normalisation not in recognised_norm_types:
+        print("Error! Unexpected norm_type for normalise_geojson_features!")
+        print(f"Given norm_type: {normalisation}")
+        print(f"Recognised options: {recognised_norm_types}")
+        sys.exit(1)
+    
+    # Normalise values by default
+    if normalisation in ["max","sum"]:
+        geojson_data_1 = normalise_geojson_features(geojson_data_1,
+                                                    combine_property, 
+                                                    norm_type=normalisation
+                                                    )
+        geojson_data_2 = normalise_geojson_features(geojson_data_2,
+                                                    combine_property, 
+                                                    norm_type=normalisation
+                                                    )
+    
+    
+    
+    
+"""
 
 
 def get_superclass(c):
