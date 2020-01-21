@@ -225,20 +225,7 @@ class GridPredictionArray(GridPrediction):
             cell_height = cell_width
         width = int(_np.rint((region.xmax - region.xmin) / cell_width))
         height = int(_np.rint((region.ymax - region.ymin) / cell_height))
-        print("width = " + str(width))
-        print("height = " + str(height))
-        print("prediction.samples :")
-        print(prediction.samples)
-        print("Calling prediction.rebase")
-        print(".")
         newpred = prediction.rebase(cell_width, cell_height, region.xmin, region.ymin)
-        print("Done with prediction.rebase")
-        print("newpred.xoffset :")
-        print(newpred.xoffset)
-        print("newpred.yoffset :")
-        print(newpred.yoffset)
-        print("newpred.samples :")
-        print(newpred.samples)
         return GridPredictionArray.from_continuous_prediction(newpred, width, height)
 
     @staticmethod

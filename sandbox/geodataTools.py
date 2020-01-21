@@ -9,13 +9,14 @@ Created on Fri Dec 13 14:49:11 2019
 import sys
 import os
 import geopandas as gpd
+import pandas as pd
 import matplotlib.pyplot as plt
 from itertools import product
 from descartes import PolygonPatch
 from shapely.geometry import Point, Polygon
 import geojson
 import json
-from collections import OrderedDict
+from collections import OrderedDict, defaultdict
 import numpy
 import ipyleaflet
 from copy import deepcopy
@@ -239,17 +240,59 @@ def list_risk_model_properties(geojson_file_name=None,
                 if p not in ignore_properties]
 
 
-
-def sort_geojson_features(geojson_file, sort_property):
-    cell_results = gpd.read_file(geojson_file)
+"""
+sort_geojson_features
+Input can be the name of the geojson file as a string,
+ or a GeoDataFrame object itself from a geojson file.
+"""
+def sort_geojson_features(geojson, sort_property):
+    cell_results = deepcopy(geojson)
+    if type(geojson)==str:
+        cell_results = gpd.read_file(geojson)
     return cell_results.sort_values(by=sort_property, ascending=False)
     
 
-def top_geojson_features(geojson_file, sort_property, top_portion=0.01):
-    sorted_frame = sort_geojson_features(geojson_file, sort_property)
+def top_geojson_features(geojson, sort_property, top_portion=0.01):
+    sorted_frame = sort_geojson_features(geojson, sort_property)
     num_features = len(sorted_frame.index)
     top_num_features = int(top_portion * num_features)
     return sorted_frame[:top_num_features]
+
+
+
+
+
+def json_dict_to_geoframe(jsondict):
+    
+    # Make geodataframe with columns for id, geometry, and all properties
+    
+    inverted_dict = defaultdict(list)
+    for feat in jsondict['features']:
+        try:
+            inverted_dict['id'].append(feat['id'])
+        except KeyError:
+            print(feat)
+            sys.exit(1)
+        for prop, val in feat['properties'].items():
+            inverted_dict[prop].append(val)
+        geom_info = feat['geometry']
+        shape_type_str = geom_info['type']
+        coords = geom_info['coordinates']
+        if shape_type_str=="Polygon" and len(coords)==1:
+            coords = coords[0]
+        to_eval = shape_type_str + "(" + str(coords) + ")"
+        geom_obj = eval(to_eval)
+        inverted_dict['geometry'].append(geom_obj)
+    dataframe = pd.DataFrame(inverted_dict)
+    geoframe = gpd.GeoDataFrame(dataframe)
+    return geoframe
+
+
+
+
+
+
+
 
 
 def marker_cluster_from_data(geojson_file):
@@ -319,24 +362,68 @@ def normalise_geojson_features(geojson_data,
     return norm_data
     
 
-"""
-def combine_geojson_features(combine_property, 
-                             geojson_data_1,
-                             geojson_data_2,
-                             multiplier_1,
-                             multiplier_2,
-                             normalisation="max",
+
+def combine_geojson_features(geojson_data_list, 
+                             combine_property_list, 
+                             multiplier_list = 1, 
+                             new_property_name=None, 
+                             normalisation=None, 
                              ):
+    
+    
+    
+    # Determine how long all the input lists should be.
+    # If multiple actual lists exist, check they're all the same length
+    lists_to_check = (geojson_data_list, 
+                      combine_property_list, 
+                      multiplier_list)
+    real_lists = [x for x in lists_to_check if type(x)==list]
+    lists_len = 1  # Default length for all 3 input lists
+    if len(real_lists)>0:
+        lens_seen = set([len(x) for x in real_lists])
+        if len(lens_seen) != 1:
+            print("Error! Not all lists are the same length!")
+            list_names = ["geojson_data_list", 
+                          "combine_property_list", 
+                          "multiplier_list"]
+            for ln, ltc in zip(list_names, lists_to_check):
+                data_len = "not a list"
+                if type(ltc)==list:
+                    data_len = len(ltc)
+                print(f"{ln} : {data_len}")
+            sys.exit(1)
+        lists_len = lens_seen.pop()
+    
+    
+    # If an input list is not a list, then we create a list that
+    #  just repeats it the right number of times
+    if type(geojson_data_list) != list:
+        geojson_data_list = [geojson_data_list]*lists_len
+    if type(combine_property_list) != list:
+        combine_property_list = [combine_property_list]*lists_len
+    if type(multiplier_list) != list:
+        multiplier_list = [multiplier_list]*lists_len
+    
+    
+    
     
     # If the data is a string, then assume it's a file name to read.
     #  Otherwise, assume it's the data (dict) itself
-    if type(geojson_data_1) == str:
-        with open(geojson_data_1) as gf1:
-            geojson_data_1 = json.load(gf1)
-    if type(geojson_data_2) == str:
-        with open(geojson_data_2) as gf2:
-            geojson_data_2 = json.load(gf2)
+    for i, gd in enumerate(geojson_data_list):
+        if type(gd) == str:
+            with open(gd) as gf:
+                geojson_data_list[i] = json.load(gf)
     
+    
+    # If no specified new property name, then set it to be
+    #  all the original names, deduplicated, and concatenated by "_"
+    if new_property_name == None:
+        prop_set = set([p.lower() for p in combine_property_list])
+        new_property_name = "_".join(sorted(prop_set))
+        
+    
+    
+    # Normalise if specified
     if type(normalisation)==str:
         normalisation = normalisation.lower()
     recognised_norm_types = ["max","sum","none",None,False]
@@ -345,22 +432,40 @@ def combine_geojson_features(combine_property,
         print(f"Given norm_type: {normalisation}")
         print(f"Recognised options: {recognised_norm_types}")
         sys.exit(1)
-    
-    # Normalise values by default
     if normalisation in ["max","sum"]:
-        geojson_data_1 = normalise_geojson_features(geojson_data_1,
-                                                    combine_property, 
-                                                    norm_type=normalisation
-                                                    )
-        geojson_data_2 = normalise_geojson_features(geojson_data_2,
-                                                    combine_property, 
+        for i, gd in enumerate(geojson_data_list):
+            geojson_data_list[i] = normalise_geojson_features(gd,
+                                                    combine_property_list[i], 
                                                     norm_type=normalisation
                                                     )
     
     
     
+    save_properties = ['x_index', 'y_index', 'x_coord', 'y_coord']
+    combo_data = deepcopy(geojson_data_list[0])
+    feat_id_map = dict()
+    for i, feat in enumerate(combo_data['features']):
+        feat_id_map[feat['id']] = i
+        # Clear all properties besides basic ID ones
+        props_to_del = [p for p in feat['properties'] \
+                                    if p not in save_properties]
+        for prop in props_to_del:
+            del combo_data['features'][i]['properties'][prop]
+        feat['properties'][new_property_name] = 0
     
-"""
+    for i, gd in enumerate(geojson_data_list):
+        for feat in gd['features']:
+            add_value = feat['properties'][combine_property_list[i]] * \
+                                                multiplier_list[i]
+            feat_id = feat['id']
+            combo_feat_index = feat_id_map[feat_id]
+            combo_feat = combo_data['features'][combo_feat_index]
+            combo_feat['properties'][new_property_name] += add_value
+    
+    
+    
+    return combo_data, new_property_name
+
 
 
 def get_superclass(c):
