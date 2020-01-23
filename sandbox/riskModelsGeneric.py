@@ -122,6 +122,19 @@ recognised_models = ["random", "naive", "phs", "ideal"]
 
 # Custom functions
 
+"""
+std_file_name
+"""
+def std_file_name(in_file):
+    std_pieces = []
+    for piece in in_file:
+        std_piece = os.path.normpath(piece)
+        std_piece = os.path.expanduser(std_piece)
+        std_piece = os.path.expandvars(std_piece)
+        std_pieces.append(std_piece)
+    return os.path.join(*std_pieces).replace("\\","/")
+    
+    
 
 
 """
@@ -1006,8 +1019,8 @@ def runModelExperiments(
             phs_time_bands_in = None, 
             phs_dist_units_in = None, 
             phs_dist_bands_in = None, 
-            phs_weight_in = None, 
-            phs_spread_in = None, 
+            phs_weight_in = "classic", 
+            phs_spread_in = "continuous", 
             print_exp_freq_in = 1, 
             csv_date_format = "%m/%d/%Y %I:%M:%S %p", 
             csv_longlat = False, 
@@ -1104,6 +1117,12 @@ def runModelExperiments(
     model_param_dict = dict()
     # Keep separate list of short string representations of parameter
     #  combinations, for ease of printing on graphs, e.g.
+    # We previously used this to 'condense' the individual model names.
+    #  For example, if all models used the same time bandwidth, we would
+    #  not include the time bandwidth in the model 'name'.
+    #  However, since we sometimes want to compare scores from different
+    #  results files, we decided it's actually more convenient for the
+    #  models to always have a consistent name.
     model_params_short = defaultdict(list)
     if "ideal" in models_to_run:
         model_param_dict["ideal"] = [()]
@@ -1128,24 +1147,33 @@ def runModelExperiments(
         for p_list in poss_phs_params:
             if len(p_list)>1:
                 params_to_iter.append([str(x)[:4] for x in p_list])
+        # This commented-out line would limit the PHS model name to only
+        #  including parameters that were not consistent across all
+        #  experiments.
+        #model_params_short["phs"] = \
+        #                ["-".join(p) for p in product(*params_to_iter)]
+        # Instead, we now always have the 4 parameters, time/dist band/unit
         model_params_short["phs"] = \
-                        ["-".join(p) for p in product(*params_to_iter)]
+                        ["-".join([str(x) for x in p[:4]]) \
+                             for p in model_param_dict["phs"]]
+        
     model_idents = dict()
     for model_name in models_to_run:
-        if len(model_params_short[model_name])<2:
+        if len(model_params_short[model_name])<2 and model_name != "phs":
             model_idents[model_name] = [model_name]
         else:
             model_idents[model_name] = \
                 [f"{model_name}-{x}" for x in model_params_short[model_name]]
-    #model_idents_flat = [iden for mname in model_idents for iden in dd[mname]]
     
     
     
     # Printable string of crime types, concatenated by "_" if necessary
-    crime_type_set_dashed = ["-".join(x.split()) for x in sorted(crime_type_set)]
-    crime_types_printable = "_".join(sorted(crime_type_set_dashed))
+    crime_type_set_nospace = \
+            ["".join(x.split()) for x in sorted(crime_type_set)]
+    crime_types_printable = "-".join(sorted(crime_type_set_nospace))
     # Full path for input csv file
     in_csv_full_path = os.path.join(datadir, in_csv_file_name)
+    in_csv_full_path = in_csv_full_path.replace("\\","/")
     # Nicely-formatted string of test date
     earliest_test_date_str = "".join(earliest_test_date.split("-"))[2:]
     # Latest start of a test data set, calculated from earliest and length
@@ -1156,6 +1184,7 @@ def runModelExperiments(
                                         step=test_date_step)
     # Number of different experiment dates
     total_num_exp_dates = len(start_test_list)
+    print(f"Number of experiments to run: {total_num_exp_dates}")
     # If number of experiment dates <= 2, declare this run to be short.
     # This means that for each experiment date, we will create various plots:
     #   - training locations
@@ -1168,42 +1197,53 @@ def runModelExperiments(
     run_is_short = False
     if total_num_exp_dates <= 2:
         run_is_short = True
-    print(f"Number of experiments: {total_num_exp_dates}")
+    # The variable run_is_short was originally created to signal that it 
+    #  would be appropriate to create plots and save them as image files, 
+    #  but we're now using ipyleaflet in a jupyter notebook instead.
+    #  However, run_is_short is still useful for indicating that we can
+    #  save off a "results" geojson file that contains the scores for each 
+    #  cell in the area. So now we're turning off the creation of image
+    #  files through this additional make_image_files flag, retaining the 
+    #  capability of generating those image files if we want them in future.
     # String that uniquely identifies this run within a file name
-    file_name_core = "_".join([date_today_str, \
-                               dataset_name, \
-                               earliest_test_date_str, \
-                               test_date_range, \
-                               test_date_step, \
-                               train_len, \
+    make_image_files = False
+    # Main core of the file name for each generated file
+    file_name_core = "_".join([date_today_str, 
+                               dataset_name, 
+                               crime_types_printable, 
+                               earliest_test_date_str, 
+                               test_date_range, 
+                               test_date_step, 
+                               train_len, 
                                test_len])
     # Output csv file name for results summary
     out_csv_file_name_results = f"results_{file_name_core}.csv"
     # Output csv file name for detailed risk info if run is short
     #out_csv_file_name_risks = f"risks_{file_name_core}.csv"
     # Full path for output csv file of results
-    out_csv_results_full_path = os.path.join(datadir, out_csv_file_name_results)
+    out_csv_results_full_path = os.path.join(datadir, 
+                                             out_csv_file_name_results)
+    out_csv_results_full_path = out_csv_results_full_path.replace("\\","/")
     # Full path for output csv file of risk info if run is short
     #out_csv_risks_full_path = os.path.join(datadir, out_csv_file_name_risks)
     # Output geojson training data file
     out_train_geojson_name = f"train_{file_name_core}.geojson"
     # Full path for output geojson training data file
     out_train_geojson_full_path = os.path.join(datadir, out_train_geojson_name)
+    out_train_geojson_full_path = out_train_geojson_full_path.replace("\\","/")
     # Output geojson testing data file
     out_test_geojson_name = f"test_{file_name_core}.geojson"
     # Full path for output geojson testing data file
     out_test_geojson_full_path = os.path.join(datadir, out_test_geojson_name)
+    out_test_geojson_full_path = out_test_geojson_full_path.replace("\\","/")
     # Output geojson results file
     out_res_geojson_name = f"results_{file_name_core}.geojson"
     # Full path for output geojson results file
     out_res_geojson_full_path = os.path.join(datadir, out_res_geojson_name)
+    out_res_geojson_full_path = out_res_geojson_full_path.replace("\\","/")
     # Full path for input geojson file
     in_geojson_full_path = os.path.join(datadir, geojson_file_name)
-    # Append risk_MODEL and rank_MODEL to risk_info_header for each model
-    if run_is_short:
-        for model_name in models_to_run:
-            risk_info_header.append(f"risk_{model_name}")
-            risk_info_header.append(f"rank_{model_name}")
+    in_geojson_full_path = in_geojson_full_path.replace("\\","/")
     
     # Check that data file and geojson file exist
     if not os.path.isfile(in_csv_full_path):
@@ -1218,7 +1258,7 @@ def runModelExperiments(
         sys.exit(1)
     
     
-    print("...declared parameters.")
+    print("...Declared parameters.")
     #tkntime_decparam = time.time() - chktime_decparam
     
     
@@ -1323,9 +1363,9 @@ def runModelExperiments(
         # (i.e., not the full rectangular grid, only relevant cells)
         num_cells_region = len(cellcoordlist_region)
         
-        print("...obtained full data set and region.")
+        print("...Obtained full data set and region.")
         tkntime_obtain_data = time.time() - chktime_obtain_data
-        print(f'Time taken to obtain data: {tkntime_obtain_data}')
+        print(f'Time taken to obtain data: {tkntime_obtain_data:.3f}')
         
         
         
@@ -1402,7 +1442,7 @@ def runModelExperiments(
             # If we have few experiments (i.e. 1 date), then create and save
             #  map visualisations of the data here. Later we'll also save
             #  visualisations of the models' results.
-            if run_is_short:
+            if run_is_short and make_image_files:
                 
                 print("Making image file names for training and testing data")
                 
@@ -1421,8 +1461,8 @@ def runModelExperiments(
                                                         img_file_train_name)
                 img_file_test_full_path = os.path.join(datadir, 
                                                        img_file_test_name)
-                print(f"Training: {img_file_train_name}")
-                print(f"Testing: {img_file_test_name}")
+                print(f"Training data image file: {img_file_train_name}")
+                print(f"Testing data image file: {img_file_test_name}")
                 
                 # Plot training data on plain grid
                 plotPointsOnGrid(points_crime_region_train, 
@@ -1489,6 +1529,9 @@ def runModelExperiments(
                     print("Skipping that model.")
                     continue
                 
+                if exp_date_index % print_exp_freq == 0:
+                    print(f"Running model: {model_name}")
+                    
                 model_params = model_param_dict[model_name]
                 
                 # Generate the data matrix based on the particular model
@@ -1506,7 +1549,10 @@ def runModelExperiments(
                             grid=masked_grid_region
                             )))
                 elif model_name == "phs":
-                    for params_combo in model_params:
+                    for pc_index, params_combo in enumerate(model_params):
+                        if exp_date_index % print_exp_freq == 0:
+                            print(f" Parameter set #{pc_index+1}/"+\
+                                  f"{len(model_params)}")
                         # Cast PHS parameters into proper data types
                         phs_time_unit = shorthandToTimeDelta(params_combo[0])
                         phs_time_band = shorthandToTimeDelta(params_combo[1])
@@ -1545,9 +1591,6 @@ def runModelExperiments(
                 for exp_index, data_matrix in enumerate(
                                                 data_matrix_dict[model_name]):
                     
-                    if exp_date_index % print_exp_freq == 0:
-                        print(f"model_name: {model_name}" + \
-                              "\t" + f"parameter set #: {exp_index}")
                     sorted_cells_dict[model_name].append(deepcopy(
                             sortCellsByRiskMatrix(
                                 cellcoordlist_region, 
@@ -1639,23 +1682,28 @@ def runModelExperiments(
                             data_matrix_dict[model_name][exp_index]
                         gdf_cells[new_exp_ident + "-score"] = \
                             [new_data_matrix[c] for c in cellcoordlist_region]
-                        gdf_cells[new_exp_ident + "-rank"] = \
-                            [new_rank_matrix[c] for c in cellcoordlist_region]
+                        # Now that we're using ipyleaflet in jupyter 
+                        #  notebooks, we're less interested in the
+                        #  relative ranking here, so I'm commenting it out.
+                        #gdf_cells[new_exp_ident + "-rank"] = \
+                        #    [new_rank_matrix[c] for c in cellcoordlist_region]
                         
                         
                         
                         # Save heat map and coverage map as image files
-                        saveModelResultMaps(
-                            model_name, 
-                            data_matrix_dict[model_name][exp_index], 
-                            rank_matrix_dict[model_name][exp_index], 
-                            exp_ident = model_idents[model_name][exp_index], 
-                            file_core = img_file_core, 
-                            filedir = datadir, 
-                            polygon = region_polygon, 
-                            points_to_map = points_crime_region_train, 
-                            mesh_info = masked_grid_mesh, 
-                            )
+                        if make_image_files:
+                            saveModelResultMaps(
+                                model_name, 
+                                data_matrix_dict[model_name][exp_index], 
+                                rank_matrix_dict[model_name][exp_index], 
+                                exp_ident = \
+                                    model_idents[model_name][exp_index], 
+                                file_core = img_file_core, 
+                                filedir = datadir, 
+                                polygon = region_polygon, 
+                                points_to_map = points_crime_region_train, 
+                                mesh_info = masked_grid_mesh, 
+                                )
                 
                 
             
@@ -1672,7 +1720,7 @@ def runModelExperiments(
                                           out_res_geojson_full_path)
                 
                 # Don't bother graphing if there's no test data
-                if num_crimes_test > 0:
+                if make_image_files and num_crimes_test > 0:
                     
                     print("Plotting graph coverage vs hit rate")
                     
@@ -1687,6 +1735,10 @@ def runModelExperiments(
                     img_file_graph_full_path = os.path.join(datadir, 
                                                         img_file_graph_name)
                     
+                    # If you want y-axis to be number of events found, then
+                    #  use hit_count_list_dict .
+                    # If you want y-axis to be fraction of events found, then
+                    #  use hit_rate_list_dict .
                     graphCoverageVsHitRate(
                             hit_count_list_dict, 
                             model_idents, 
@@ -1694,9 +1746,6 @@ def runModelExperiments(
                             x_limits=(0, coverage_max), 
                             title="Hit rate evaluation of models by coverage", 
                             out_img_file_path = img_file_graph_full_path)
-                    #graphCoverageVsHitRate(hit_rate_list_dict, 
-                    #                       model_idents, 
-                    #                       models_to_run)
             
             
             
@@ -1704,7 +1753,7 @@ def runModelExperiments(
             
             
             tkn_time_exp = time.time()-chktime_exp
-            print(f"time spent on exp: {tkn_time_exp}")
+            print(f"Time spent on experiment: {tkn_time_exp:.3f}")
             exp_times.append(tkn_time_exp)
             
         
@@ -1715,7 +1764,7 @@ def runModelExperiments(
         
     
     
-    if not run_is_short:
+    if make_image_files and not run_is_short:
         print("Plotting graph hit rates over time")
         from riskModelsResultsEval import graphHitRatesOverTime
         graphHitRatesOverTime(out_csv_results_full_path)
@@ -1724,22 +1773,14 @@ def runModelExperiments(
     print("Experiment timing info:")
     print("Exp #\tTime")
     for i, t in enumerate(exp_times):
-        print(f"{i}\t{t}")
-    return
-
-"""
-# if run_is_short then write risk_info file at the end here
-if run_is_short:
-    # Open risk_info csv file for writing, write header row
-    with open(out_csv_risks_full_path, "w") as csvrisk:
-        risk_writer = csv.writer(csvrisk, delimiter=",", lineterminator="\n")
-        risk_writer.writerow(risk_info_header)
-        
-        # Need to have stored info to write here
+        print(f"{i+1}\t{t:.3f}")
     
     
-
-"""
+    # Return full paths to the files that were generated
+    return [out_csv_results_full_path, 
+            out_train_geojson_full_path, 
+            out_test_geojson_full_path, 
+            out_res_geojson_full_path]
 
 
 

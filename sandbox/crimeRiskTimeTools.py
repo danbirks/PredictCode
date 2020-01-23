@@ -97,7 +97,6 @@ def generateDateRange(start=None,
         start_datetime = np.datetime64(start)
         end_datetime = np.datetime64(end)
     
-    print("About to make date_range...")
     # Generate date range via start and end and step
     date_range = np.arange(start_datetime, \
                            end_datetime, \

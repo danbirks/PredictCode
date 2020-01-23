@@ -22,7 +22,9 @@ import ipyleaflet
 from copy import deepcopy
 
 
-
+"""
+plotPointsOnGrid
+"""
 def plotPointsOnGrid(points, 
                      masked_grid, 
                      polygon, 
@@ -85,7 +87,7 @@ def rect_from_coords_and_size(xcoord,
     
 
 """
-
+make_points_frame
 """
 def make_points_frame(points, 
                       in_epsg, 
@@ -112,6 +114,9 @@ def make_points_frame(points,
     return gdf_datapoints
 
 
+"""
+make_cells_frame
+"""
 def make_cells_frame(masked_grid, 
                      in_epsg, 
                      out_epsg=4326, 
@@ -201,7 +206,8 @@ def frame_to_json_with_id(frame, json_name):
             if type(value)==numpy.int64:
                 value = int(value)
             this_properties[col_name] = value
-        this_id = str((this_properties["y_index"],this_properties["x_index"]))
+        this_id = str((this_properties["y_index"],
+                       this_properties["x_index"]))
         feat_coll_list.append(geojson.Feature(
                                 geometry = this_geometry,
                                 properties = this_properties,
@@ -363,21 +369,26 @@ def normalise_geojson_features(geojson_data,
     
 
 
+"""
+combine_geojson_features
+"""
 def combine_geojson_features(geojson_data_list, 
                              combine_property_list, 
                              multiplier_list = 1, 
                              new_property_name=None, 
+                             new_file_name=None, 
                              normalisation=None, 
                              ):
     
-    
+    combine_property_list = [p.strip() for p in \
+                                 combine_property_list.split(",")]
     
     # Determine how long all the input lists should be.
     # If multiple actual lists exist, check they're all the same length
     lists_to_check = (geojson_data_list, 
                       combine_property_list, 
                       multiplier_list)
-    real_lists = [x for x in lists_to_check if type(x)==list]
+    real_lists = [x for x in lists_to_check if type(x)==list and len(x)>1]
     lists_len = 1  # Default length for all 3 input lists
     if len(real_lists)>0:
         lens_seen = set([len(x) for x in real_lists])
@@ -406,21 +417,29 @@ def combine_geojson_features(geojson_data_list,
     
     
     
-    
-    # If the data is a string, then assume it's a file name to read.
-    #  Otherwise, assume it's the data (dict) itself
-    for i, gd in enumerate(geojson_data_list):
-        if type(gd) == str:
-            with open(gd) as gf:
-                geojson_data_list[i] = json.load(gf)
-    
-    
     # If no specified new property name, then set it to be
     #  all the original names, deduplicated, and concatenated by "_"
     if new_property_name == None:
         prop_set = set([p.lower() for p in combine_property_list])
         new_property_name = "_".join(sorted(prop_set))
-        
+    
+    
+    
+    # If the data is a string, then assume it's a file name to read.
+    #  Otherwise, assume it's the data (dict) itself
+    for i, gd in enumerate(geojson_data_list):
+        if type(gd) == str:
+            gd = os.path.normpath(gd)
+            gd = os.path.expanduser(gd)
+            gd = os.path.expandvars(gd)
+            if new_file_name == None:
+                new_dir = os.path.dirname(gd)
+                new_base = f"results_{new_property_name}.geojson"
+                new_file_name = os.path.join(new_dir, new_base)
+                new_file_name = new_file_name.replace("\\","/")
+            with open(gd) as gf:
+                geojson_data_list[i] = json.load(gf)
+    
     
     
     # Normalise if specified
@@ -463,8 +482,10 @@ def combine_geojson_features(geojson_data_list,
             combo_feat['properties'][new_property_name] += add_value
     
     
+    with open(new_file_name, "w") as f:
+        f.write(str(combo_data))
     
-    return combo_data, new_property_name
+    return combo_data, new_property_name, new_file_name
 
 
 
