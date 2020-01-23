@@ -88,12 +88,12 @@ result_info_header = [
                         "hit_pct", 
                         "model", 
                         "rand_seed", 
-                        "rhs_bandwidth", 
                         "phs_time_unit", 
                         "phs_time_band", 
                         "phs_dist_unit", 
                         "phs_dist_band", 
                         "phs_weight", 
+                        "phs_spread", 
                         ]
 # Columns risk_MODEL and rank_MODEL for each.model will be appended too
 risk_info_header = [
@@ -802,111 +802,6 @@ def loadGenericData(filepath,
 
 
 
-
-
-
-
-
-
-
-
-
-
-
-
-
-"""
-Former section of setting parameters here;
- it will be removed after confirming it's no longer needed.
-
-
-
-
-###
-# Input parameters for the user to provide
-# (Unimplemented parameters are commented out)
-
-
-# Location of data file
-datadir = os.path.join("..", "..", "Data")
-# Dataset name (to be included in name of output file)
-dataset_name= "chicago"
-# Crime types
-#!!!  May want to change this to be different for train vs test?
-#!!!  May want to use multiple sets of types, then combine results?
-crime_type_set = {"BURGLARY"}
-#crime_type_set_sweep = [{"BURGLARY"}] # if doing a sweep over different sets
-# Size of grid cells
-#cell_width_sweep = [100] # if doing a sweep over different cell sizes
-cell_width = 100
-# Input csv file name
-in_csv_file_name = "chi_all_s_BURGLARY_RES_010101_190101_stdXY.csv"
-# Format of date in csv file
-date_format_csv = "%m/%d/%Y %I:%M:%S %p"
-#!!! Should actually force that format when standardizing csv files!!!
-#!!! Also change "infeet" issues at standardizing stage too!!!
-# Of all planned experiments, earliest start of a TEST (not train) data set
-earliest_test_date = "2003-01-01"
-# Time between earliest experiment and latest experiment
-test_date_range = "1W"
-# Length of training data
-train_len = "8W"
-# Length of testing data
-test_len = "1W"
-# Time step offset between different experiments
-# (If you want non-overlapping, then set test_date_step = test_len)
-#test_date_step = "1D"
-test_date_step = test_len
-# Coverage rates to test
-coverage_bounds = [0.01, 0.02, 0.05, 0.10]
-# Geojson file
-#geojson_file_name = "Chicago_Areas.geojson"
-geojson_file_name = "Chicago_South_Side_2790.geojson"
-#geojson_file_name = "Durham_27700.geojson"
-
-# How frequently to display a print statement showing the experiment number
-print_exp_freq = 5
-
-
-# Predictive models to run
-models_to_run = ["random","naive","phs","ideal"]
-
-num_random = 3
-
-model_param_dict = dict()
-model_param_dict["ideal"] = [()]
-model_param_dict["naive"] = [()]
-
-# Param list for Random model.
-#  For example, if 4, param list is [(0,), (1,), (2,), (3,)]
-model_param_dict["random"] = list(product(range(num_random)))
-
-
-
-# Param list for PHS model.
-phs_time_units = ["1W"]
-phs_time_bands = ["4W"]
-phs_dist_units = [100]
-phs_dist_bands = [400]
-#phs_weight = ["linear"]
-phs_weight = ["classic"]
-model_param_dict["phs"] = list(product(
-                            phs_time_units, 
-                            phs_time_bands, 
-                            phs_dist_units, 
-                            phs_dist_bands, 
-                            phs_weight))
-"""
-
-
-
-
-
-
-
-
-
-
 """
 runModelExperiments
 
@@ -993,6 +888,10 @@ Arguments:
             classic = 
             linear = 
             Ex: "classic"
+    phs_spread_in : 
+        Comma-separated string of methods of the risk spread for PHS.
+            Current recognised methods: grid, continuous
+            Ex: "continuous"
     print_exp_freq_in : 
         Integer, or string to be cast to an integer, representing how
             frequently some information about an experiment should be
@@ -1042,7 +941,7 @@ def runModelExperiments(
     #chktime_decparam = time.time()
     print("Declaring parameters...")
     
-
+    
     
     
     
@@ -1154,8 +1053,9 @@ def runModelExperiments(
         #                ["-".join(p) for p in product(*params_to_iter)]
         # Instead, we now always have the 4 parameters, time/dist band/unit
         model_params_short["phs"] = \
-                        ["-".join([str(x) for x in p[:4]]) \
-                             for p in model_param_dict["phs"]]
+                        [f"{p[1]}-{p[3]}m" for p in model_param_dict["phs"]]
+                        #["-".join([str(p[1]),str(p[3]+"m")] \
+                        #     for p in model_param_dict["phs"]]
         
     model_idents = dict()
     for model_name in models_to_run:
@@ -1191,9 +1091,6 @@ def runModelExperiments(
     #   - test locations
     #   - heat maps for each experiment
     #   - coverage maps for each experiment
-    # In this case we might also save off the risk scores computed for each cell
-    #  by each experiment, and relative rankings of those cells.
-    #  (But that part isn't implemented yet.)
     run_is_short = False
     if total_num_exp_dates <= 2:
         run_is_short = True
@@ -1211,6 +1108,7 @@ def runModelExperiments(
     file_name_core = "_".join([date_today_str, 
                                dataset_name, 
                                crime_types_printable, 
+                               f"{cell_width}m", 
                                earliest_test_date_str, 
                                test_date_range, 
                                test_date_step, 
@@ -1218,14 +1116,10 @@ def runModelExperiments(
                                test_len])
     # Output csv file name for results summary
     out_csv_file_name_results = f"results_{file_name_core}.csv"
-    # Output csv file name for detailed risk info if run is short
-    #out_csv_file_name_risks = f"risks_{file_name_core}.csv"
     # Full path for output csv file of results
     out_csv_results_full_path = os.path.join(datadir, 
                                              out_csv_file_name_results)
     out_csv_results_full_path = out_csv_results_full_path.replace("\\","/")
-    # Full path for output csv file of risk info if run is short
-    #out_csv_risks_full_path = os.path.join(datadir, out_csv_file_name_risks)
     # Output geojson training data file
     out_train_geojson_name = f"train_{file_name_core}.geojson"
     # Full path for output geojson training data file
@@ -1273,12 +1167,6 @@ def runModelExperiments(
         
         
         
-        # If we were to do a "crime type sweep", that would go here.
-        # But probably simpler to just re-run a new crime type set instead.
-        # Unless we want to actively combine results within this script?
-        
-        
-        
         
         
         ###
@@ -1304,7 +1192,6 @@ def runModelExperiments(
         # Obtain polygon from geojson file (which should have been pre-processed)
         region_polygon = gpd.read_file(in_geojson_full_path)
         # Convert to relevant CRS for local projection
-        
         region_polygon = region_polygon.to_crs({'init': f'epsg:{local_epsg_in}'})
         # Take unary union, which also converts region from being
         #  a GeoDataFrame to a Polygon
@@ -1647,7 +1534,7 @@ def runModelExperiments(
                         # Pre-pad PHS parameters with empty spaces where
                         #  columns for non-PHS parameters are
                         if model_name == "phs":
-                            result_info += ["",""]
+                            result_info += [""]
                         # 
                         result_info += list(model_param_dict[model_name][exp_index])
                         
@@ -1680,7 +1567,7 @@ def runModelExperiments(
                         new_exp_ident = model_idents[model_name][exp_index]
                         new_data_matrix = \
                             data_matrix_dict[model_name][exp_index]
-                        gdf_cells[new_exp_ident + "-score"] = \
+                        gdf_cells[new_exp_ident] = \
                             [new_data_matrix[c] for c in cellcoordlist_region]
                         # Now that we're using ipyleaflet in jupyter 
                         #  notebooks, we're less interested in the

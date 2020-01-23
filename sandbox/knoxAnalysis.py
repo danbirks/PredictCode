@@ -460,9 +460,16 @@ def get_knox_data_from_file(knox_file_path, exp_limit=0):
         
         
         for exp_index, exp in enumerate(knox_data):
-            #print(f"exp.stats\n{exp.stats}")
-            #print(f"exp.medians\n{exp.medians}")
-            knox_data[exp_index].ratios = exp.stats/exp.medians
+            #print(exp.stats)
+            #print(exp.medians)
+            with np.errstate(divide='ignore', invalid='ignore'):
+                knox_data[exp_index].ratios = np.true_divide(exp.stats,
+                                                     exp.medians, 
+                                                     )
+            
+            knox_data[exp_index].ratios = \
+                np.nan_to_num(knox_data[exp_index].ratios)
+            #print(knox_data[exp_index].ratios)
     
     return knox_data
     
@@ -477,6 +484,7 @@ def make_knox_info_file(datadir,
                         in_csv_file_name, 
                         out_knox_file_name, 
                         geojson_file_name, 
+                        local_epsg_in, 
                         crime_types, 
                         num_knox_iterations, 
                         knox_sbin_size, 
@@ -491,7 +499,7 @@ def make_knox_info_file(datadir,
                         csv_longlat = False, 
                         csv_epsg = None, 
                         csv_infeet = True, 
-                        csv_has_header = True, 
+                        csv_col_names = None, 
                         ):
     
     
@@ -503,7 +511,7 @@ def make_knox_info_file(datadir,
     
     # Full paths to files
     in_csv_full_path = os.path.join(datadir, in_csv_file_name)
-    geojson_full_path = os.path.join(datadir, geojson_file_name)
+    in_geojson_full_path = os.path.join(datadir, geojson_file_name)
     
     # Set of relevant crime types in the data
     crime_type_set = set(splitCommaArgs(crime_types))
@@ -537,14 +545,22 @@ def make_knox_info_file(datadir,
                                    longlat=csv_longlat, 
                                    epsg = csv_epsg, 
                                    infeet=csv_infeet, 
-                                   has_header = csv_has_header
+                                   col_names = csv_col_names
                                    )
-    
+    num_crimes_total = len(points_crime.timestamps)
+    print(f"Total number of relevant crimes: {num_crimes_total}")
     
     
     
     # Obtain polygon from geojson file (which should have been pre-processed)
-    region_polygon = gpd.read_file(geojson_full_path).unary_union
+    region_polygon = gpd.read_file(in_geojson_full_path)
+    # Convert to relevant CRS for local projection
+    region_polygon = region_polygon.to_crs({'init': f'epsg:{local_epsg_in}'})
+    # Take unary union, which also converts region from being
+    #  a GeoDataFrame to a Polygon
+    region_polygon = region_polygon.unary_union
+    
+    
     
     # Get subset of input crime that occurred within region
     points_crime_region = open_cp.geometry.intersect_timed_points(points_crime, region_polygon)
