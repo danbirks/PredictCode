@@ -126,8 +126,11 @@ recognised_models = ["random", "naive", "phs", "ideal"]
 std_file_name
 """
 def std_file_name(in_file):
+    in_file_pieces = in_file
+    if type(in_file)==str:
+        in_file_pieces = [in_file]
     std_pieces = []
-    for piece in in_file:
+    for piece in in_file_pieces:
         std_piece = os.path.normpath(piece)
         std_piece = os.path.expanduser(std_piece)
         std_piece = os.path.expandvars(std_piece)
@@ -906,7 +909,8 @@ def runModelExperiments(
             geojson_file_name_in, 
             local_epsg_in, 
             earliest_test_date_in, 
-            test_date_range_in, 
+            num_experiments_in, 
+            #test_date_range_in, 
             train_len_in, 
             test_len_in, 
             test_date_step_in, 
@@ -939,7 +943,6 @@ def runModelExperiments(
     
     #### Declare data parameters
     #chktime_decparam = time.time()
-    print("Declaring parameters...")
     
     
     
@@ -948,11 +951,8 @@ def runModelExperiments(
     ###
     # Parameters directly from input, recast as appropriate data types
     
-    datadir = os.path.normpath(datadir_in)
-    datadir = os.path.expanduser(datadir)
-    datadir = os.path.expandvars(datadir)
-    print("datadir is defined as:")
-    print(datadir)
+    datadir = std_file_name(datadir_in)
+    print(f"The data directory is: {datadir}")
     if not os.path.isdir(datadir):
         print("Error!")
         print(f"Directory does not exist: {datadir}")
@@ -964,7 +964,8 @@ def runModelExperiments(
     in_csv_file_name = in_csv_file_name_in
     geojson_file_name = geojson_file_name_in
     earliest_test_date = earliest_test_date_in
-    test_date_range = test_date_range_in
+    #test_date_range = test_date_range_in
+    num_experiments_in = int(num_experiments_in)
     train_len = train_len_in
     test_len = test_len_in
     test_date_step = test_date_step_in
@@ -1077,14 +1078,16 @@ def runModelExperiments(
     # Nicely-formatted string of test date
     earliest_test_date_str = "".join(earliest_test_date.split("-"))[2:]
     # Latest start of a test data set, calculated from earliest and length
-    latest_test_date = generateLaterDate(earliest_test_date, test_date_range)
+    #latest_test_date = generateLaterDate(earliest_test_date, test_date_range)
     # List of all experiment dates
     start_test_list = generateDateRange(start=earliest_test_date, 
-                                        end=latest_test_date, 
-                                        step=test_date_step)
+                                        #end=latest_test_date, 
+                                        step=test_date_step, 
+                                        num=num_experiments_in)
     # Number of different experiment dates
     total_num_exp_dates = len(start_test_list)
     print(f"Number of experiments to run: {total_num_exp_dates}")
+    print(f"Associated dates of each experiment: {start_test_list}")
     # If number of experiment dates <= 2, declare this run to be short.
     # This means that for each experiment date, we will create various plots:
     #   - training locations
@@ -1110,7 +1113,8 @@ def runModelExperiments(
                                crime_types_printable, 
                                f"{cell_width}m", 
                                earliest_test_date_str, 
-                               test_date_range, 
+                               #test_date_range, 
+                               str(num_experiments_in),
                                test_date_step, 
                                train_len, 
                                test_len])
@@ -1152,7 +1156,6 @@ def runModelExperiments(
         sys.exit(1)
     
     
-    print("...Declared parameters.")
     #tkntime_decparam = time.time() - chktime_decparam
     
     
@@ -1289,8 +1292,12 @@ def runModelExperiments(
             gdf_datapoints_train = \
                         gdt.make_points_frame(points_crime_region_train, 
                                               csv_epsg)
-            print(f"Writing training data to {out_train_geojson_full_path}")
-            gdf_datapoints_train.to_file(out_train_geojson_full_path,
+            
+            out_train_geojson_full_path_n = \
+                out_train_geojson_full_path.replace(".geojson",
+                                        f"_{exp_date_index+1}.geojson")
+            print(f"Writing training data to {out_train_geojson_full_path_n}")
+            gdf_datapoints_train.to_file(out_train_geojson_full_path_n,
                                    driver='GeoJSON')
             
             
@@ -1313,9 +1320,12 @@ def runModelExperiments(
                 gdf_datapoints_test = gdt.make_points_frame(
                                                 points_crime_region_test, 
                                                 csv_epsg)
+                out_test_geojson_full_path_n = \
+                    out_test_geojson_full_path.replace(".geojson",
+                                            f"_{exp_date_index+1}.geojson")
                 print(f"Writing testing data to "+\
-                          f"{out_test_geojson_full_path}")
-                gdf_datapoints_test.to_file(out_test_geojson_full_path,
+                          f"{out_test_geojson_full_path_n}")
+                gdf_datapoints_test.to_file(out_test_geojson_full_path_n,
                                    driver='GeoJSON')
             
             
@@ -1665,8 +1675,8 @@ def runModelExperiments(
     
     # Return full paths to the files that were generated
     return [out_csv_results_full_path, 
-            out_train_geojson_full_path, 
-            out_test_geojson_full_path, 
+            out_train_geojson_full_path.replace(".geojson","_1.geojson"), 
+            out_test_geojson_full_path.replace(".geojson","_1.geojson"), 
             out_res_geojson_full_path]
 
 

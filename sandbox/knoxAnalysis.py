@@ -49,6 +49,7 @@ import open_cp.knox
 
 
 from riskModelsGeneric import splitCommaArgs, \
+                              std_file_name, \
                               loadGenericData
 from crimeRiskTimeTools import generateDateRange, \
                                getTimedPointsInTimeRange, \
@@ -64,7 +65,8 @@ _cdict = {'red':   [(0.0,  1.0, 1.0),
          'blue':  [(0.0,  0.2, 0.2),
                    (1.0,  0.2, 0.2)]}
 
-yellow_to_red = matplotlib.colors.LinearSegmentedColormap("yellow_to_red", _cdict)
+yellow_to_red = matplotlib.colors.LinearSegmentedColormap("yellow_to_red", 
+                                                          _cdict)
 
 
 
@@ -507,11 +509,15 @@ def make_knox_info_file(datadir,
     # Normalised and derived parameters
     
     # Normalised data directory
-    datadir = os.path.expanduser(os.path.normpath(datadir))
+    datadir = os.path.normpath(datadir)
+    datadir = os.path.expanduser(datadir)
+    datadir = os.path.expandvars(datadir)
     
     # Full paths to files
     in_csv_full_path = os.path.join(datadir, in_csv_file_name)
+    in_csv_full_path = in_csv_full_path.replace("\\","/")
     in_geojson_full_path = os.path.join(datadir, geojson_file_name)
+    in_geojson_full_path = in_geojson_full_path.replace("\\","/")
     
     # Set of relevant crime types in the data
     crime_type_set = set(splitCommaArgs(crime_types))
@@ -526,12 +532,12 @@ def make_knox_info_file(datadir,
     start_times = generateDateRange(start=earliest_start_time, 
                                     step=time_step, 
                                     num=num_exp)
-    
+    print(f"Experiment start dates: {start_times}")
     
     
     out_file_path = os.path.join(datadir, out_knox_file_name)
+    out_file_path = out_file_path.replace("\\","/")
     
-    print(f"outfile: {out_file_path}")
     
     
     
@@ -547,8 +553,13 @@ def make_knox_info_file(datadir,
                                    infeet=csv_infeet, 
                                    col_names = csv_col_names
                                    )
-    num_crimes_total = len(points_crime.timestamps)
-    print(f"Total number of relevant crimes: {num_crimes_total}")
+    crime_timestamps = sorted(points_crime.timestamps)
+    num_crimes_total = len(crime_timestamps)
+    earliest_seen_date = crime_timestamps[0]
+    latest_seen_date = crime_timestamps[-1]
+    print(f"Earliest date in dataset: {earliest_seen_date}")
+    print(f"Latest date in dataset: {latest_seen_date}")
+    print(f"Relevant crimes: {num_crimes_total}")
     
     
     
@@ -567,8 +578,9 @@ def make_knox_info_file(datadir,
     
     total_num_events = len(points_crime_region.timestamps)
     
-    print(f"Successfully obtained data, with {total_num_events} events.")
+    print(f"Relevant crimes within area: {total_num_events}")
     
+    print(f"Number of planned runs: {len(start_times)}")
     
     
     
@@ -590,31 +602,31 @@ def make_knox_info_file(datadir,
             
             ### SELECT TRAINING DATA
             
-            chkpt_2 = time.time()
-            print(f"Getting data subset...")
+            #chkpt_2 = time.time()
+            #print(f"Getting data subset...")
             # Get subset of data for training
             points_crime_region_train = getTimedPointsInTimeRange(points_crime_region, 
                                                               start_time, 
                                                               end_time)
-            print(f"...Got data subset. ({time.time()-chkpt_2:.4f})")
+            #print(f"...Got data subset. ({time.time()-chkpt_2:.4f})")
             
             
             
             num_events = len(points_crime_region_train.timestamps)
             
-            print(f"Number of events in timespan: {num_events}")
+            print(f" Number of events in timespan: {num_events}")
             
             chkpt_3 = time.time()
-            print("Calculating Knox...")
+            print(" Calculating Knox...")
             knox_result = getKnoxResult(points_crime_region_train, 
                                         num_knox_iterations, 
                                         knox_sbins, 
                                         knox_tbins)
-            print(f"...Calculated Knox. ({time.time()-chkpt_3:.4f})")
+            print(f" ...Calculated Knox. ({time.time()-chkpt_3:.4f})")
             
             
-            chkpt_4 = time.time()
-            print(f"Writing to file {out_file_path} ...")
+            #chkpt_4 = time.time()
+            #print(f"Writing to file {out_file_path} ...")
             fout.write(str(start_time))
             fout.write("\n")
             fout.write(str(end_time))
@@ -644,8 +656,8 @@ def make_knox_info_file(datadir,
                 fout.write(" ".join([str(knox_result.pvalue(j,i)) for j in range(knox_sbin_num)]))
                 fout.write("\n")
             fout.write("\n")
-            print(f"...Wrote to file. ({time.time()-chkpt_4:.4f})")
-            print(f"Time for this run: {time.time()-chkpt_1:.4f}")
+            #print(f"...Wrote to file. ({time.time()-chkpt_4:.4f})")
+            print(f" Time for this run: {time.time()-chkpt_1:.4f}")
     
     print(f"Number of runs: {len(start_times)}")
     print(f"Number of bins per run: {len(knox_sbins) * len(knox_tbins)}")
@@ -654,8 +666,9 @@ def make_knox_info_file(datadir,
     
     
     
+    print(f"Output file: {out_file_path}")
     
-    
+    return out_file_path
 
 
 
@@ -664,17 +677,16 @@ def make_knox_info_file(datadir,
 
 
 
-def make_graphs_from_knox_file(datadir, 
-                               knoxrun_file_name, 
+def make_graphs_from_knox_file(knoxrun_file_path, 
                                signif_cutoff = [0.05], 
                                exp_limit = 0, 
                                jitter_factor = 0.02, 
                                knox_out_custom=None, 
-                               graph_best_bands=False):
+                               graph_best_bands=False, 
+                               save_knox_tables=False):
     
-    # Derived parameters
-    datadir = os.path.expanduser(os.path.normpath(datadir))
-    knoxrun_file_path = os.path.join(datadir, knoxrun_file_name)
+    
+    knoxrun_file_path = std_file_name(knoxrun_file_path)
     
     # Ensure the significance cutoff is a list object, even if it only has
     #  one element.
@@ -702,11 +714,15 @@ def make_graphs_from_knox_file(datadir,
     
     for exp_num, exp in enumerate(knox_data):
         
-        knox_grid_file_base = "knox_grid_"
-        if knox_out_custom != None:
-            knox_grid_file_base += knox_out_custom + "_"
-        knox_grid_file_base += f"{exp.end_date}_{exp.window_size}.png"
-        knox_grid_file_path = os.path.join(datadir, knox_grid_file_base)
+        knox_grid_file_path = None
+        if save_knox_tables:
+            knox_grid_file_base = "knox_grid_"
+            if knox_out_custom != None:
+                knox_grid_file_base += knox_out_custom + "_"
+            knox_grid_file_base += f"{exp.end_date}_{exp.window_size}.png"
+            datadir = os.path.dirname(knoxrun_file_path)
+            knox_grid_file_path = os.path.join(datadir, knox_grid_file_base)
+            knox_grid_file_path = std_file_name(knox_grid_file_path)
         
         # Create grids that illustrate the statistically significant
         #  bandwidth bins, coloured based on their Knox ratios
@@ -776,7 +792,7 @@ def make_graphs_from_knox_file(datadir,
     
     
     
-    
+    return
 
 
 

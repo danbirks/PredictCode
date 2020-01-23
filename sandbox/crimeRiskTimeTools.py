@@ -103,7 +103,6 @@ def generateDateRange(start=None,
                            step=np.timedelta64(step_num, step_unit), \
                            dtype=f"datetime64[{step_unit}]")
     
-    print(f"date_range: {date_range}")
     
     
     
