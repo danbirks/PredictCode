@@ -26,6 +26,7 @@ from collections import Counter, defaultdict
 from itertools import product
 from copy import deepcopy
 
+import pandas as pd
 import geopandas as gpd
 import matplotlib.pyplot as plt
 from descartes import PolygonPatch
@@ -1139,6 +1140,11 @@ def runModelExperiments(
     # Full path for output csv file of results
     out_csv_results_full_path = std_file_name([output_datadir, 
                                                out_csv_file_name_results])
+    # Output csv file name for detailed results summary
+    out_csv_file_name_details = f"details_{file_name_core}.csv"
+    # Full path for output csv file of results
+    out_csv_details_full_path = std_file_name([output_datadir, 
+                                               out_csv_file_name_details])
     # Output geojson training data file
     out_train_geojson_name = f"train_{file_name_core}.geojson"
     # Full path for output geojson training data file
@@ -1188,8 +1194,7 @@ def runModelExperiments(
         chktime_obtain_data = time.time()
         print("Obtaining full data set and region...")
         
-        #!!! Need to change standardization pre-processing so that this input
-        #     is always Eastings/Northings, and in meters
+        
         points_crime = loadGenericData(in_csv_full_path, 
                                        crime_type_set=crime_type_set, 
                                        date_format_csv = csv_date_format, 
@@ -1427,7 +1432,7 @@ def runModelExperiments(
             
             
             
-            
+            # For each model type (e.g., random, naive, phs, ideal)
             for model_name in models_to_run:
                 if model_name not in recognised_models:
                     print("Error!")
@@ -1494,7 +1499,9 @@ def runModelExperiments(
                 
                 
                 
-                
+                # For each result from that model
+                #  (i.e., if iterating over paramater options such as for
+                #   the phs model, each of their results are considered)
                 for exp_index, data_matrix in enumerate(
                                                 data_matrix_dict[model_name]):
                     
@@ -1615,8 +1622,11 @@ def runModelExperiments(
                                 points_to_map = points_crime_region_train, 
                                 mesh_info = masked_grid_mesh, 
                                 )
-                
-                
+            
+            # At this point, finished loop over model types (naive, phs, etc)
+            
+            
+            
             
             
             # If only a couple experiments, then create a line graph
@@ -1629,6 +1639,57 @@ def runModelExperiments(
                 print(out_res_geojson_full_path)
                 gdt.frame_to_json_with_id(gdf_cells, 
                                           out_res_geojson_full_path)
+                
+                
+                # Save detailed results data to a file
+                print("Saving detailed results to csv:")
+                print(out_csv_details_full_path)
+                
+                detail_df = pd.DataFrame()
+                
+                for model_name in models_to_run:
+                    
+                    
+                    for exp_index, data_matrix in \
+                                enumerate(data_matrix_dict[model_name]):
+                        exp_ident = model_idents[model_name][exp_index]
+                        s_cells = sorted_cells_dict[model_name][exp_index]
+                        cell_risks = [data_matrix[sc] for sc in s_cells]
+                        crimes_found = \
+                            hit_count_list_dict[model_name][exp_index][1:]
+                        crimes_found_pct = \
+                            hit_rate_list_dict[model_name][exp_index][1:]
+                        # Explanatory note:
+                        #  The hit count/rate lists have one more entry than 
+                        #  the number of cells, because for their calculations
+                        #  we want to include the edge case where 0 cells
+                        #  are selected, in which case a score of 0 is
+                        #  earned. However, for the purposes of making a 
+                        #  dataframe, we want all columns to be the same 
+                        #  length, so we do not want to include this null 
+                        #  case. This is why "[1:]" is used above.
+                        
+                        
+                        
+                        
+                        df_model_info = dict()
+                        df_model_info[f"{exp_ident}_cell"] = s_cells
+                        df_model_info[f"{exp_ident}_cell_risk"] = \
+                            cell_risks
+                        #df_model_info[f"{exp_ident}_cell_crime"] = \
+                        #    
+                        df_model_info[f"{exp_ident}_found_count"] = \
+                            crimes_found
+                        df_model_info[f"{exp_ident}_found_rate"] = \
+                            crimes_found_pct
+                        
+                        detail_df = detail_df.assign(**df_model_info)
+                        
+                        
+                #print(detail_df)
+                detail_df.to_csv(out_csv_details_full_path)
+                
+                
                 
                 # Don't bother graphing if there's no test data
                 if make_image_files and num_crimes_test > 0:
