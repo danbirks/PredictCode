@@ -88,17 +88,17 @@ result_info_header = [
                         "hit_pct", 
                         "model", 
                         "rand_seed", 
-                        "phs_time_unit", 
-                        "phs_time_band", 
-                        "phs_dist_unit", 
-                        "phs_dist_band", 
-                        "phs_weight", 
-                        "phs_spread", 
+                        "time_unit", 
+                        "time_band", 
+                        "dist_unit", 
+                        "dist_band", 
+                        "weight", 
+                        "spread", 
                         ]
 # Columns risk_MODEL and rank_MODEL for each.model will be appended too
 risk_info_header = [
                         "dataset", 
-                        "event_types",
+                        "event_types", 
                         "cell_width", 
                         "eval_date", 
                         "train_len", 
@@ -706,13 +706,6 @@ def loadGenericData(filepath,
                     infeet=True, 
                     col_names = None):
     
-    # Note: Data is expected in a csv file with the following properties:
-    # Row 0 = Header
-    # Col 0 = Date/time
-    # Col 1 = Longitude (or eastings)
-    # Col 2 = Latitude (or northings)
-    # Col 3 = Crime type
-    # Col 4 = Location type (optional, currently not implemented)
     
     # EPSGs:
     # 3435 or 4326 or 3857 or...? = Chicago
@@ -722,36 +715,43 @@ def loadGenericData(filepath,
     # 27700 = UK???
     
     
-    #!!! Need to enforce "%m/%d/%Y %I:%M:%S %p" format for csv files!!!
-    #!!! Also change "infeet" issues at standardizing stage too!!!
-    
-    
     _FEET_IN_METERS = 3937 / 1200
     
     if longlat:
         try:
             import pyproj as _proj
         except ImportError:
-            print("Package 'pyproj' not found: projection methods will not be supported.", file=sys.stderr)
+            print("Package 'pyproj' not found: "+\
+                  "projection methods will not be supported.", 
+                  file=sys.stderr)
             _proj = None
         if not _proj:
             print("_proj did not load!")
             sys.exit(1)
         if not proj:
             if not epsg:
-                raise Exception("Need to provide one of 'proj' object or 'epsg' code")
+                raise Exception("Need to provide one of 'proj' object "+\
+                                "or 'epsg' code")
             proj = _proj.Proj({"init": "epsg:"+str(epsg)})
     
     
+    # Instantiate list where we will record data
     data = []
+    # Instantiate map from column names to column numbers
     cn_map = dict()
+    # Begin reading csv file, with utf-8-sig encoding
     with open(filepath, encoding='utf-8-sig') as f:
         csvreader = csv.reader(f)
+        # If no column names were provided, then just
+        #  assume 1st col is date, 2nd is east, 3rd is north, 4th is crime
         if col_names == None:
             col_names = ["date","east","north","crime"]
             for i, cn in enumerate(col_names):
                 cn_map[cn] = i
-        if col_names != None:
+        # Else, column names were provided, so read the header row and
+        #  then map those column names to column numbers. If a
+        #  specified column name cannot be found, report the error.
+        else:
             header_row = next(csvreader)
             header_row = [x.strip() for x in header_row]
             for cn in col_names:
@@ -761,46 +761,58 @@ def loadGenericData(filepath,
                     print("Error! Unrecognised input column name!")
                     print(f"  Specified column: \"{cn}\"")
                     print(f"  Detected columns: "+\
-                          ",".join([f"\"{x}\"" for x in header_row]))
-                    print("  Detected column names: " + \
-                        ",".join(['\"'+str(x)+'\"' for x in header_row]))
-                    print("  Detected column names: " + \
-                        ",".join([str([ord(v) for v in x]) for x in header_row]))
+                          ", ".join([f"\"{x}\"" for x in header_row]))
                     sys.exit(1)
-                
+        
+        # Read each entry of the data
         for row in csvreader:
-            # Confirm crime type is one we're interested in
+            # Confirm crime type is one we're interested in, otherwise skip.
             crime_type = row[cn_map[col_names[3]]].strip()
             if crime_type not in crime_type_set:
                 continue
-            # Grab time, x, and y values (x & y may be long & lat)
+            # Grab date/time, with specified date format
             t = datetime.datetime.strptime(row[cn_map[col_names[0]]], 
                                            date_format_csv)
+            # Grab x and y values (east & north, or long & lat)
             x = float(row[cn_map[col_names[1]]])
             y = float(row[cn_map[col_names[2]]])
+            
+            # If the csv is longlat, then use the projection specified earlier
             if longlat:
                 x, y = proj(x, y)
-            else:
-                if infeet:
-                    x /= _FEET_IN_METERS
-                    y /= _FEET_IN_METERS
-            # Store data trio
+            # If the csv is not longlat (i.e., is eastings/northings),
+            #  then convert feet to meters if necessary
+            elif infeet:
+                x /= _FEET_IN_METERS
+                y /= _FEET_IN_METERS
+            # Store data trio (time, x-coord, y-coord) into our list
             data.append((t, x, y))
     
-    
+    # Sort data by time
     data.sort(key = lambda triple : triple[0])
+    # Store times as a list
     times = [triple[0] for triple in data]
-    xcoords = np.empty(len(data))
-    ycoords = np.empty(len(data))
+    # Store x and y coords as numpy.ndarray objects
+    xcoords = np.zeros(len(data))
+    ycoords = np.zeros(len(data))
     for i, triple in enumerate(data):
         xcoords[i], ycoords[i] = triple[1], triple[2]
     
+    # Create TimedPoints object from times and coords
     timedpoints = TimedPoints.from_coords(times, xcoords, ycoords)
     
     return timedpoints
 
 
+"""
+get_risk_output_as_dataframe
 
+Not implemented yet
+For displaying a dataframe from csv output in a Jupyter notebook
+"""
+def get_risk_output_as_dataframe(csv_file,
+                                 col_list):
+    pass
 
 
 
@@ -901,7 +913,8 @@ Arguments:
             sent to stdout to help monitor the script's progress.
 """
 def runModelExperiments(
-            datadir_in, 
+            input_datadir_in, 
+            output_datadir_in, 
             dataset_name_in, 
             crime_type_set_in, 
             cell_width_in, 
@@ -910,7 +923,6 @@ def runModelExperiments(
             local_epsg_in, 
             earliest_test_date_in, 
             num_experiments_in, 
-            #test_date_range_in, 
             train_len_in, 
             test_len_in, 
             test_date_step_in, 
@@ -951,11 +963,18 @@ def runModelExperiments(
     ###
     # Parameters directly from input, recast as appropriate data types
     
-    datadir = std_file_name(datadir_in)
-    print(f"The data directory is: {datadir}")
-    if not os.path.isdir(datadir):
+    input_datadir = std_file_name(input_datadir_in)
+    print(f"The input data directory is: {input_datadir}")
+    if not os.path.isdir(input_datadir):
         print("Error!")
-        print(f"Directory does not exist: {datadir}")
+        print(f"Directory does not exist: {input_datadir}")
+        print("Exiting...")
+        sys.exit(1)
+    output_datadir = std_file_name(output_datadir_in)
+    print(f"The output data directory is: {output_datadir}")
+    if not os.path.isdir(output_datadir):
+        print("Error!")
+        print(f"Directory does not exist: {output_datadir}")
         print("Exiting...")
         sys.exit(1)
     dataset_name = dataset_name_in
@@ -964,8 +983,7 @@ def runModelExperiments(
     in_csv_file_name = in_csv_file_name_in
     geojson_file_name = geojson_file_name_in
     earliest_test_date = earliest_test_date_in
-    #test_date_range = test_date_range_in
-    num_experiments_in = int(num_experiments_in)
+    num_experiments_in = min(1,int(num_experiments_in))
     train_len = train_len_in
     test_len = test_len_in
     test_date_step = test_date_step_in
@@ -1073,8 +1091,7 @@ def runModelExperiments(
             ["".join(x.split()) for x in sorted(crime_type_set)]
     crime_types_printable = "-".join(sorted(crime_type_set_nospace))
     # Full path for input csv file
-    in_csv_full_path = os.path.join(datadir, in_csv_file_name)
-    in_csv_full_path = in_csv_full_path.replace("\\","/")
+    in_csv_full_path = std_file_name([input_datadir, in_csv_file_name])
     # Nicely-formatted string of test date
     earliest_test_date_str = "".join(earliest_test_date.split("-"))[2:]
     # Latest start of a test data set, calculated from earliest and length
@@ -1113,47 +1130,40 @@ def runModelExperiments(
                                crime_types_printable, 
                                f"{cell_width}m", 
                                earliest_test_date_str, 
-                               #test_date_range, 
-                               str(num_experiments_in),
+                               str(num_experiments_in)+"x",
                                test_date_step, 
                                train_len, 
                                test_len])
     # Output csv file name for results summary
     out_csv_file_name_results = f"results_{file_name_core}.csv"
     # Full path for output csv file of results
-    out_csv_results_full_path = os.path.join(datadir, 
-                                             out_csv_file_name_results)
-    out_csv_results_full_path = out_csv_results_full_path.replace("\\","/")
+    out_csv_results_full_path = std_file_name([output_datadir, 
+                                               out_csv_file_name_results])
     # Output geojson training data file
     out_train_geojson_name = f"train_{file_name_core}.geojson"
     # Full path for output geojson training data file
-    out_train_geojson_full_path = os.path.join(datadir, out_train_geojson_name)
-    out_train_geojson_full_path = out_train_geojson_full_path.replace("\\","/")
+    out_train_geojson_full_path = std_file_name([output_datadir, 
+                                                 out_train_geojson_name])
     # Output geojson testing data file
     out_test_geojson_name = f"test_{file_name_core}.geojson"
     # Full path for output geojson testing data file
-    out_test_geojson_full_path = os.path.join(datadir, out_test_geojson_name)
-    out_test_geojson_full_path = out_test_geojson_full_path.replace("\\","/")
+    out_test_geojson_full_path = std_file_name([output_datadir, 
+                                                out_test_geojson_name])
     # Output geojson results file
     out_res_geojson_name = f"results_{file_name_core}.geojson"
     # Full path for output geojson results file
-    out_res_geojson_full_path = os.path.join(datadir, out_res_geojson_name)
-    out_res_geojson_full_path = out_res_geojson_full_path.replace("\\","/")
+    out_res_geojson_full_path = std_file_name([output_datadir, 
+                                               out_res_geojson_name])
     # Full path for input geojson file
-    in_geojson_full_path = os.path.join(datadir, geojson_file_name)
-    in_geojson_full_path = in_geojson_full_path.replace("\\","/")
+    in_geojson_full_path = std_file_name([input_datadir, geojson_file_name])
     
     # Check that data file and geojson file exist
-    if not os.path.isfile(in_csv_full_path):
-        print("Error!")
-        print(f"File does not exist: {in_csv_full_path}")
-        print("Exiting...")
-        sys.exit(1)
-    if not os.path.isfile(in_geojson_full_path):
-        print("Error!")
-        print(f"File does not exist: {in_geojson_full_path}")
-        print("Exiting...")
-        sys.exit(1)
+    for file_to_check in [in_csv_full_path, in_geojson_full_path]:
+        if not os.path.isfile(file_to_check):
+            print("Error!")
+            print(f"File does not exist: {file_to_check}")
+            print("Exiting...")
+            sys.exit(1)
     
     
     #tkntime_decparam = time.time() - chktime_decparam
@@ -1354,9 +1364,9 @@ def runModelExperiments(
                 
                 img_file_train_name = f"trainmap_{img_file_core}.png"
                 img_file_test_name = f"testmap_{img_file_core}.png"
-                img_file_train_full_path = os.path.join(datadir, 
+                img_file_train_full_path = os.path.join(output_datadir, 
                                                         img_file_train_name)
-                img_file_test_full_path = os.path.join(datadir, 
+                img_file_test_full_path = os.path.join(output_datadir, 
                                                        img_file_test_name)
                 print(f"Training data image file: {img_file_train_name}")
                 print(f"Testing data image file: {img_file_test_name}")
@@ -1548,6 +1558,10 @@ def runModelExperiments(
                         # 
                         result_info += list(model_param_dict[model_name][exp_index])
                         
+                        # Record training length as a parameter for naive
+                        if model_name == "naive":
+                            result_info += ["","",train_len]
+                        
                         # Pad out rest of row with empty string values
                         while len(result_info) < len(result_info_header):
                             result_info.append("")
@@ -1596,7 +1610,7 @@ def runModelExperiments(
                                 exp_ident = \
                                     model_idents[model_name][exp_index], 
                                 file_core = img_file_core, 
-                                filedir = datadir, 
+                                filedir = output_datadir, 
                                 polygon = region_polygon, 
                                 points_to_map = points_crime_region_train, 
                                 mesh_info = masked_grid_mesh, 
@@ -1629,7 +1643,7 @@ def runModelExperiments(
                             ])
                     
                     img_file_graph_name = f"hitrates_{img_file_core}.png"
-                    img_file_graph_full_path = os.path.join(datadir, 
+                    img_file_graph_full_path = os.path.join(output_datadir, 
                                                         img_file_graph_name)
                     
                     # If you want y-axis to be number of events found, then
