@@ -529,10 +529,10 @@ def runPhsModel(training_data,
         phs_predictor.time_unit = time_unit
         
         # Only include this method of establishing cutoff_time if we want a
-        #  prediction for the day after the latest event in training data. If so,
-        #  this will ignore any event-less period of time between the final
-        #  event in the training data and the start of the test data, which 
-        #  means time decay may be less pronounced.
+        #  prediction for the day after the latest event in training data. 
+        #  If so, this will ignore any event-less period of time between the 
+        #  final event in the training data and the start of the test data, 
+        #  which means time decay may be less pronounced.
         if ignore_eventless_end:
             cutoff_time = sorted(training_data.timestamps)[-1]
             cutoff_time += np.timedelta64(1,"D")
@@ -677,7 +677,6 @@ def graphCoverageVsHitRate(hit_rates_dict,
     
     ax.set(xlabel="Coverage", ylabel="Hit rate")
     
-    # Set the axes to have a buffer of 500 around the polygon
     if x_limits != None:
         ax.set(xlim=x_limits)
     
@@ -690,6 +689,42 @@ def graphCoverageVsHitRate(hit_rates_dict,
     return
     
     
+
+
+def graph_cov_vs_hit_from_csv(csv_file, 
+                              x_limits = None, 
+                              title = None, 
+                              img_size = (12,6), 
+                              out_img_file_path = None):
+    # Read csv file into pandas dataframe
+    result_data = pd.read_csv(csv_file)
+    
+    # Add a row of 0's at the start, so initial points make sense
+    result_data.loc[-1]=[0]*result_data.shape[1]
+    result_data.index = result_data.index + 1
+    result_data = result_data.sort_index()
+    
+    # Declare figure
+    fig, ax = plt.subplots(figsize=img_size)
+    
+    names_for_legend = []
+    for col_name in result_data.columns:
+        if col_name.endswith("_found_rate"):
+            model_name = col_name[:-len("_found_rate")]
+            names_for_legend.append(model_name)
+            ax.plot(result_data["coverage"], result_data[col_name])
+    
+    ax.legend(names_for_legend)
+    ax.set(xlabel="Coverage", ylabel="Hit rate")
+    
+    if x_limits != None:
+        ax.set(xlim=x_limits)
+    if title != None:
+        ax.set_title(title)
+    if out_img_file_path != None:
+        fig.savefig(out_img_file_path)
+    
+    return
 
 
 
@@ -922,13 +957,13 @@ def runModelExperiments(
             in_csv_file_name_in, 
             geojson_file_name_in, 
             local_epsg_in, 
-            earliest_test_date_in, 
-            num_experiments_in, 
+            earliest_exp_date_in, 
             train_len_in, 
             test_len_in, 
-            test_date_step_in, 
             coverage_bounds_in, 
             models_to_run_in, 
+            num_experiments_in = 1, 
+            test_date_step_in = None, 
             coverage_max_in = None, 
             num_random_in = None, 
             phs_time_units_in = None, 
@@ -978,12 +1013,12 @@ def runModelExperiments(
         print(f"Directory does not exist: {output_datadir}")
         print("Exiting...")
         sys.exit(1)
-    dataset_name = dataset_name_in
+    dataset_name = "".join([c for c in dataset_name_in if c.isalnum()])
     crime_type_set = set(splitCommaArgs(crime_type_set_in))
     cell_width = int(cell_width_in)
     in_csv_file_name = in_csv_file_name_in
     geojson_file_name = geojson_file_name_in
-    earliest_test_date = earliest_test_date_in
+    earliest_exp_date = earliest_exp_date_in
     num_experiments_in = min(1,int(num_experiments_in))
     train_len = train_len_in
     test_len = test_len_in
@@ -1094,12 +1129,9 @@ def runModelExperiments(
     # Full path for input csv file
     in_csv_full_path = std_file_name([input_datadir, in_csv_file_name])
     # Nicely-formatted string of test date
-    earliest_test_date_str = "".join(earliest_test_date.split("-"))[2:]
-    # Latest start of a test data set, calculated from earliest and length
-    #latest_test_date = generateLaterDate(earliest_test_date, test_date_range)
+    earliest_exp_date_str = "".join(earliest_exp_date.split("-"))[2:]
     # List of all experiment dates
-    start_test_list = generateDateRange(start=earliest_test_date, 
-                                        #end=latest_test_date, 
+    start_test_list = generateDateRange(start=earliest_exp_date, 
                                         step=test_date_step, 
                                         num=num_experiments_in)
     # Number of different experiment dates
@@ -1130,7 +1162,7 @@ def runModelExperiments(
                                dataset_name, 
                                crime_types_printable, 
                                f"{cell_width}m", 
-                               earliest_test_date_str, 
+                               earliest_exp_date_str, 
                                str(num_experiments_in)+"x",
                                test_date_step, 
                                train_len, 
@@ -1380,7 +1412,7 @@ def runModelExperiments(
                 plotPointsOnGrid(points_crime_region_train, 
                                  masked_grid_region, 
                                  region_polygon, 
-                                 title=f"Train data {exp_date_index}:"+\
+                                 title=f"Train data {exp_date_index+1}:"+\
                                          f" {num_crimes_train} crimes", 
                                  sizex=10, 
                                  sizey=10, 
@@ -1391,7 +1423,7 @@ def runModelExperiments(
                     plotPointsOnGrid(points_crime_region_test, 
                                      masked_grid_region, 
                                      region_polygon, 
-                                     title=f"Test data {exp_date_index};"+\
+                                     title=f"Test data {exp_date_index+1};"+\
                                          f" {num_crimes_test} crimes", 
                                      sizex=10, 
                                      sizey=10, 
@@ -1629,6 +1661,75 @@ def runModelExperiments(
             
             
             
+            
+            
+            
+            
+            # Save detailed results data to a file
+            print("Saving detailed results to csv:")
+            out_csv_details_full_path_exp = \
+                out_csv_details_full_path[:-4] + \
+                f"_{exp_date_index+1}" + \
+                out_csv_details_full_path[-4:]
+            print(out_csv_details_full_path_exp)
+            
+            # Instantiate dataframe with column of integers from 1
+            #  to number of cells, and column of floats from 
+            #  1/(number of cells) to 1.
+            detail_df = pd.DataFrame(data={
+                    "cell_num": range(1,num_cells_region+1),
+                    "coverage": np.linspace(0,1,num_cells_region+1)[1:],
+                    })
+            
+            for model_name in models_to_run:
+                
+                
+                for exp_index, data_matrix in \
+                            enumerate(data_matrix_dict[model_name]):
+                    exp_ident = model_idents[model_name][exp_index]
+                    s_cells = sorted_cells_dict[model_name][exp_index]
+                    cell_risks = [data_matrix[sc] for sc in s_cells]
+                    crimes_found = \
+                        hit_count_list_dict[model_name][exp_index][1:]
+                    crimes_found_pct = \
+                        hit_rate_list_dict[model_name][exp_index][1:]
+                    # Explanatory note:
+                    #  The hit count/rate lists have one more entry than 
+                    #  the number of cells, because for their calculations
+                    #  we want to include the edge case where 0 cells
+                    #  are selected, in which case a score of 0 is
+                    #  earned. However, for the purposes of making a 
+                    #  dataframe, we want all columns to be the same 
+                    #  length, so we do not want to include this null 
+                    #  case. This is why "[1:]" is used above.
+                    
+                    
+                    
+                    
+                    df_model_info = dict()
+                    df_model_info[f"{exp_ident}_cell"] = s_cells
+                    df_model_info[f"{exp_ident}_cell_risk"] = \
+                        cell_risks
+                    #df_model_info[f"{exp_ident}_cell_crime"] = \
+                    #    
+                    df_model_info[f"{exp_ident}_found_count"] = \
+                        crimes_found
+                    df_model_info[f"{exp_ident}_found_rate"] = \
+                        crimes_found_pct
+                    
+                    detail_df = detail_df.assign(**df_model_info)
+                    
+                    
+            #print(detail_df)
+            detail_df.to_csv(out_csv_details_full_path_exp, index=False)
+            
+            
+            
+            
+            
+            
+            
+            
             # If only a couple experiments, then create a line graph
             #  comparing hit rates of different models (y-axis) based
             #  on coverage rate (x-axis)
@@ -1641,59 +1742,6 @@ def runModelExperiments(
                                           out_res_geojson_full_path)
                 
                 
-                # Save detailed results data to a file
-                print("Saving detailed results to csv:")
-                print(out_csv_details_full_path)
-                
-                # Instantiate dataframe with column of integers from 1
-                #  to number of cells, and column of floats from 
-                #  1/(number of cells) to 1.
-                detail_df = pd.DataFrame(data={
-                        "cell_num": range(1,num_cells_region+1),
-                        "coverage": np.linspace(0,1,num_cells_region+1)[1:],
-                        })
-                
-                for model_name in models_to_run:
-                    
-                    
-                    for exp_index, data_matrix in \
-                                enumerate(data_matrix_dict[model_name]):
-                        exp_ident = model_idents[model_name][exp_index]
-                        s_cells = sorted_cells_dict[model_name][exp_index]
-                        cell_risks = [data_matrix[sc] for sc in s_cells]
-                        crimes_found = \
-                            hit_count_list_dict[model_name][exp_index][1:]
-                        crimes_found_pct = \
-                            hit_rate_list_dict[model_name][exp_index][1:]
-                        # Explanatory note:
-                        #  The hit count/rate lists have one more entry than 
-                        #  the number of cells, because for their calculations
-                        #  we want to include the edge case where 0 cells
-                        #  are selected, in which case a score of 0 is
-                        #  earned. However, for the purposes of making a 
-                        #  dataframe, we want all columns to be the same 
-                        #  length, so we do not want to include this null 
-                        #  case. This is why "[1:]" is used above.
-                        
-                        
-                        
-                        
-                        df_model_info = dict()
-                        df_model_info[f"{exp_ident}_cell"] = s_cells
-                        df_model_info[f"{exp_ident}_cell_risk"] = \
-                            cell_risks
-                        #df_model_info[f"{exp_ident}_cell_crime"] = \
-                        #    
-                        df_model_info[f"{exp_ident}_found_count"] = \
-                            crimes_found
-                        df_model_info[f"{exp_ident}_found_rate"] = \
-                            crimes_found_pct
-                        
-                        detail_df = detail_df.assign(**df_model_info)
-                        
-                        
-                #print(detail_df)
-                detail_df.to_csv(out_csv_details_full_path, index=False)
                 
                 
                 
@@ -1802,8 +1850,8 @@ def main():
     geojson_file_name = "Police_Force_Areas_December_2016_Durham_fixed.geojson"
     local_epsg = 27700
     # Of all planned experiments, earliest start of a TEST (not train) data set
-    #earliest_test_date = "2016-09-01"
-    earliest_test_date = "2019-09-01"
+    #earliest_exp_date = "2016-09-01"
+    earliest_exp_date = "2019-09-01"
     # Time between earliest experiment and latest experiment
     test_date_range = "1W"
     # Length of training data
@@ -1885,7 +1933,7 @@ def main():
             in_csv_file_name_in = in_csv_file_name, 
             geojson_file_name_in = geojson_file_name, 
             local_epsg_in = local_epsg, 
-            earliest_test_date_in = earliest_test_date, 
+            earliest_exp_date_in = earliest_exp_date, 
             test_date_range_in = test_date_range, 
             train_len_in = train_len, 
             test_len_in = test_len, 
