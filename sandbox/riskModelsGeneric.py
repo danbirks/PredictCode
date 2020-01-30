@@ -1204,7 +1204,7 @@ def runModelExperiments(
                                        col_names = csv_col_names)
         
         num_crimes_total = len(points_crime.timestamps)
-        print(f"Total number of relevant crimes: {num_crimes_total}")
+        print(f"Number of relevant crimes: {num_crimes_total}")
         
         
         # Obtain polygon from geojson file (which should have been pre-processed)
@@ -1222,7 +1222,7 @@ def runModelExperiments(
         
         
         num_crimes_region = len(points_crime_region.timestamps)
-        print(f"Total number of relevant crimes in area: {num_crimes_region}")
+        print(f"Number of relevant crimes in area: {num_crimes_region}")
         
         
         
@@ -1645,7 +1645,13 @@ def runModelExperiments(
                 print("Saving detailed results to csv:")
                 print(out_csv_details_full_path)
                 
-                detail_df = pd.DataFrame()
+                # Instantiate dataframe with column of integers from 1
+                #  to number of cells, and column of floats from 
+                #  1/(number of cells) to 1.
+                detail_df = pd.DataFrame(data={
+                        "cell_num": range(1,num_cells_region+1),
+                        "coverage": np.linspace(0,1,num_cells_region+1)[1:],
+                        })
                 
                 for model_name in models_to_run:
                     
@@ -1687,7 +1693,7 @@ def runModelExperiments(
                         
                         
                 #print(detail_df)
-                detail_df.to_csv(out_csv_details_full_path)
+                detail_df.to_csv(out_csv_details_full_path, index=False)
                 
                 
                 
