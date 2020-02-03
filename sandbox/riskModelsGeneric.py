@@ -54,7 +54,8 @@ from crimeRiskTimeTools import generateLaterDate, \
                                generateDateRange, \
                                getTimedPointsInTimeRange, \
                                getSixDigitDate, \
-                               shorthandToTimeDelta
+                               shorthandToTimeDelta, \
+                               check_time_step
 import geodataTools as gdt
 
 
@@ -68,10 +69,15 @@ _cdict = {'red':   [(0.0,  1.0, 1.0),
                     (1.0,  0.0, 0.0)],
           'blue':  [(0.0,  0.2, 0.2),
                     (1.0,  0.2, 0.2)]}
-yellow_to_red = matplotlib.colors.LinearSegmentedColormap("yellow_to_red", _cdict)
+yellow_to_red = matplotlib.colors.LinearSegmentedColormap("yellow_to_red", 
+                                                          _cdict)
 
 # Define color map for 5 discrete areas (most significant to least)
-discrete_colors = matplotlib.colors.ListedColormap(['red', 'yellow', 'green', 'blue', 'white'])
+discrete_colors = matplotlib.colors.ListedColormap(['red', 
+                                                    'yellow', 
+                                                    'green', 
+                                                    'blue', 
+                                                    'white'])
 
 
 
@@ -96,22 +102,12 @@ result_info_header = [
                         "weight", 
                         "spread", 
                         ]
-# Columns risk_MODEL and rank_MODEL for each.model will be appended too
-risk_info_header = [
-                        "dataset", 
-                        "event_types", 
-                        "cell_width", 
-                        "eval_date", 
-                        "train_len", 
-                        "test_len", 
-                        "rownum", 
-                        "colnum", 
-                        "easting", 
-                        "northing" ]
 
+# Obtain today's date
 date_today = datetime.date.today()
 date_today_str = getSixDigitDate(date_today)
 
+# List of recognised models
 recognised_models = ["random", "naive", "phs", "ideal"]
 
 
@@ -384,7 +380,6 @@ def rankMatrixFromSortedCells(masked_matrix,
                               cutoff_list, 
                               score_list=None):
     if score_list == None:
-        #score_list = list(range(len(cutoff_list), -1, -1))
         score_list = np.linspace(0,1,len(cutoff_list)+1)
     if len(score_list) != len(cutoff_list)+1:
         print("Error! Score list is not 1 more than cutoff list: \
@@ -633,7 +628,7 @@ def saveModelResultMaps(model_name,
                           sizey=10, 
                           out_img_file_path = img_file_cov_fullpath)
     
-    return
+    return [img_file_heat_fullpath, img_file_cov_fullpath]
 
 
 
@@ -653,7 +648,8 @@ def graphCoverageVsHitRate(hit_rates_dict,
     
     model_hit_rate_pairs = []
     for mn in model_names:
-        model_hit_rate_pairs += list(zip(model_runs_list[mn], hit_rates_dict[mn]))
+        model_hit_rate_pairs += list(zip(model_runs_list[mn], 
+                                         hit_rates_dict[mn]))
     
     
     # Declare figure
@@ -960,8 +956,8 @@ def runModelExperiments(
             earliest_exp_date_in, 
             train_len_in, 
             test_len_in, 
-            coverage_bounds_in, 
             models_to_run_in, 
+            coverage_bounds_in = None, 
             num_experiments_in = 1, 
             test_date_step_in = None, 
             coverage_max_in = None, 
@@ -1019,14 +1015,25 @@ def runModelExperiments(
     in_csv_file_name = in_csv_file_name_in
     geojson_file_name = geojson_file_name_in
     earliest_exp_date = earliest_exp_date_in
-    num_experiments_in = min(1,int(num_experiments_in))
-    train_len = train_len_in
-    test_len = test_len_in
+    if earliest_exp_date_in==None or \
+            earliest_exp_date_in.lower() in ["none","today"]:
+        earliest_exp_date = date_today
+    earliest_exp_date = earliest_exp_date_in
+    if num_experiments_in == None:
+        num_experiments_in = 1
+    else:
+        num_experiments_in = int(num_experiments_in)
+    if num_experiments_in < 1:
+        num_experiments_in = 1
+    train_len = check_time_step(train_len_in)
+    test_len = check_time_step(test_len_in)
     test_date_step = test_date_step_in
     if test_date_step == None:
         test_date_step = test_len
-    coverage_bounds = sorted([float(x) for x in \
-                       splitCommaArgs(coverage_bounds_in)])
+    coverage_bounds = None
+    if coverage_bounds_in != None:
+        coverage_bounds = sorted([float(x) for x in \
+                           splitCommaArgs(coverage_bounds_in)])
     models_to_run = splitCommaArgs(models_to_run_in)
     if "random" in models_to_run:
         if num_random_in == None:
@@ -1045,9 +1052,11 @@ def runModelExperiments(
         phs_weight = splitCommaArgs(phs_weight_in)
         phs_spread = splitCommaArgs(phs_spread_in)
     print_exp_freq = int(print_exp_freq_in)
-    coverage_max = coverage_bounds[-1]
+    coverage_max = None
     if coverage_max_in != None:
         coverage_max = float(coverage_max_in)
+    elif coverage_bounds != None:
+        coverage_max = coverage_bounds[-1]
     
     
     
@@ -1131,9 +1140,13 @@ def runModelExperiments(
     # Nicely-formatted string of test date
     earliest_exp_date_str = "".join(earliest_exp_date.split("-"))[2:]
     # List of all experiment dates
+    
+    
     start_test_list = generateDateRange(start=earliest_exp_date, 
                                         step=test_date_step, 
                                         num=num_experiments_in)
+    
+    
     # Number of different experiment dates
     total_num_exp_dates = len(start_test_list)
     print(f"Number of experiments to run: {total_num_exp_dates}")
@@ -1192,6 +1205,12 @@ def runModelExperiments(
     # Full path for output geojson results file
     out_res_geojson_full_path = std_file_name([output_datadir, 
                                                out_res_geojson_name])
+    # Output line graph image file
+    hit_rate_line_graph_full_path = None
+    if make_image_files and not run_is_short:
+        hit_rate_line_graph_name = f"hitrate_{file_name_core}.png"
+        hit_rate_line_graph_full_path = std_file_name([output_datadir, 
+                                               hit_rate_line_graph_name])
     # Full path for input geojson file
     in_geojson_full_path = std_file_name([input_datadir, geojson_file_name])
     
@@ -1203,379 +1222,415 @@ def runModelExperiments(
             print("Exiting...")
             sys.exit(1)
     
+    # Running list of files created
+    files_created = []
+    
+    # Check if we're only Forecasting, no Hindcasting, if there's no testing.
+    forecast_only = False
+    if int(test_len[:-1])==0:
+        forecast_only = True
+    
+    
+    
     
     #tkntime_decparam = time.time() - chktime_decparam
     
     
+    # If we're hindcasting, set up a Results csv file
+    if not forecast_only:
+        # Open output csv file for writing, write header row
+        with open(out_csv_results_full_path, "w") as csvf:
+            results_writer = csv.writer(csvf, delimiter=",", 
+                                        lineterminator="\n")
+            results_writer.writerow(result_info_header)
+            files_created.append(out_csv_results_full_path)
     
     
-    # Open output csv file for writing, write header row
-    with open(out_csv_results_full_path, "w") as csvf:
-        results_writer = csv.writer(csvf, delimiter=",", lineterminator="\n")
-        results_writer.writerow(result_info_header)
+    
+    
+    ###
+    # Obtain input data
+    
+    chktime_obtain_data = time.time()
+    print("Obtaining full data set and region...")
+    
+    
+    points_crime = loadGenericData(in_csv_full_path, 
+                                   crime_type_set=crime_type_set, 
+                                   date_format_csv = csv_date_format, 
+                                   longlat=csv_longlat, 
+                                   epsg = csv_epsg, 
+                                   infeet=csv_infeet, 
+                                   col_names = csv_col_names)
+    
+    num_crimes_total = len(points_crime.timestamps)
+    print(f"Number of relevant crimes: {num_crimes_total}")
+    
+    
+    # Obtain polygon from geojson file (which should have been pre-processed)
+    region_polygon = gpd.read_file(in_geojson_full_path)
+    # Convert to relevant CRS for local projection
+    region_polygon = region_polygon.to_crs({'init': f'epsg:{local_epsg_in}'})
+    # Take unary union, which also converts region from being
+    #  a GeoDataFrame to a Polygon
+    region_polygon = region_polygon.unary_union
+    
+    # Get subset of input crime that occurred within region
+    points_crime_region = intersect_timed_points(points_crime, region_polygon)
+    
+    
+    
+    
+    num_crimes_region = len(points_crime_region.timestamps)
+    print(f"Number of relevant crimes in area: {num_crimes_region}")
+    
+    
+    
+    # Get grid version of region
+    masked_grid_region = mask_grid_by_intersection(region_polygon, 
+                                                   DataGrid(xsize=cell_width, 
+                                                            ysize=cell_width, 
+                                                            xoffset=0, 
+                                                            yoffset=0)
+                                                   )
+    
+    
+    
+    # Create GeoDataFrame of relevant cells, where each entry has
+    # an associated rectangular geometry corresponding to a cell.
+    gdf_cells = gdt.make_cells_frame(
+                                    masked_grid_region, 
+                                    27700
+                                    )
+    
+    
+    
+    
+    
+    # Get "mesh info" of that grid, which is useful for displaying the map.
+    #  masked_grid_region is type open_cp.data.MaskedGrid
+    #  masked_grid_mesh is type tuple, with 2 elements
+    #   1st element is a list of x-coordinates (in Eastings) for grid
+    #   2nd element is a list of y-coordinates (in Northings) for grid
+    masked_grid_mesh = masked_grid_region.mesh_info()
+    
+    
+    
+    
+    # Get tuple of all cells in gridded region
+    # Each cell is represented as a 2-tuple of 0-up indices for the cells
+    #  within the (masked) grid. That is, they are NOT lat/long or E/N
+    #  coordinates, but they can be mapped to those coordinates by
+    #  using masked_grid_mesh, for example
+    cellcoordlist_region = getRegionCells(masked_grid_region)
+    
+    # Obtain number of cells in the grid that contain relevant geometry
+    # (i.e., not the full rectangular grid, only relevant cells)
+    num_cells_region = len(cellcoordlist_region)
+    
+    print("Obtained full data set and region.")
+    tkntime_obtain_data = time.time() - chktime_obtain_data
+    print(f'Time taken to obtain data: {tkntime_obtain_data:.3f}')
+    
+    
+    
+    
+    # Log of how long each experiment takes to run
+    exp_times = []
+    
+    
+    
+    # Each start_test time in the generated list defines the time period for
+    #  an experiment (or multiple experiments)
+    for exp_date_index, start_test in enumerate(start_test_list):
+        
+        chktime_exp = time.time()
+        
+        if exp_date_index % print_exp_freq == 0:
+            print(f"Running experiment "+\
+                  f"{exp_date_index+1}/{total_num_exp_dates}...")
+        
+        # Compute time ranges of training and testing data
+        end_train = start_test
+        start_train = generateEarlierDate(end_train, train_len)
+        end_test = generateLaterDate(start_test, test_len)
         
         
+        # Obtain training data
+        points_crime_region_train = getTimedPointsInTimeRange(
+                                        points_crime_region, 
+                                        start_train, 
+                                        end_train)
+        # Count how many crimes there were in this training data set
+        num_crimes_train = len(points_crime_region_train.timestamps)
         
         
+        gdf_datapoints_train = \
+                    gdt.make_points_frame(points_crime_region_train, 
+                                          csv_epsg)
+        
+        out_train_geojson_full_path_n = \
+            out_train_geojson_full_path.replace(".geojson",
+                                    f"_{exp_date_index+1}.geojson")
+        print(f"Writing training data to {out_train_geojson_full_path_n}")
+        gdf_datapoints_train.to_file(out_train_geojson_full_path_n,
+                               driver='GeoJSON')
+        files_created.append(out_train_geojson_full_path_n)
         
         
+        # Obtain testing data
+        points_crime_region_test = getTimedPointsInTimeRange(
+                                        points_crime_region, 
+                                        start_test, 
+                                        end_test)
+        # Count how many crimes there were in this test data set
+        num_crimes_test = len(points_crime_region_test.timestamps)
         
-        ###
-        # Obtain input data
-        
-        chktime_obtain_data = time.time()
-        print("Obtaining full data set and region...")
-        
-        
-        points_crime = loadGenericData(in_csv_full_path, 
-                                       crime_type_set=crime_type_set, 
-                                       date_format_csv = csv_date_format, 
-                                       longlat=csv_longlat, 
-                                       epsg = csv_epsg, 
-                                       infeet=csv_infeet, 
-                                       col_names = csv_col_names)
-        
-        num_crimes_total = len(points_crime.timestamps)
-        print(f"Number of relevant crimes: {num_crimes_total}")
+        # Count the number of crimes per cell in test data.
+        #  This is used for evaluation.
+        cells_testcrime_ctr = countPointsPerCell(points_crime_region_test, 
+                                                 masked_grid_region)
         
         
-        # Obtain polygon from geojson file (which should have been pre-processed)
-        region_polygon = gpd.read_file(in_geojson_full_path)
-        # Convert to relevant CRS for local projection
-        region_polygon = region_polygon.to_crs({'init': f'epsg:{local_epsg_in}'})
-        # Take unary union, which also converts region from being
-        #  a GeoDataFrame to a Polygon
-        region_polygon = region_polygon.unary_union
-        
-        # Get subset of input crime that occurred within region
-        points_crime_region = intersect_timed_points(points_crime, region_polygon)
-        
-        
-        
-        
-        num_crimes_region = len(points_crime_region.timestamps)
-        print(f"Number of relevant crimes in area: {num_crimes_region}")
-        
-        
-        
-        # Get grid version of region
-        masked_grid_region = mask_grid_by_intersection(region_polygon, 
-                                                       DataGrid(xsize=cell_width, 
-                                                                ysize=cell_width, 
-                                                                xoffset=0, 
-                                                                yoffset=0)
-                                                       )
-        
-        
-        
-        # Create GeoDataFrame of relevant cells, where each entry has
-        # an associated rectangular geometry corresponding to a cell.
-        gdf_cells = gdt.make_cells_frame(
-                                        masked_grid_region, 
-                                        27700
-                                        )
-        
-        
-        
-        
-        
-        # Get "mesh info" of that grid, which is useful for displaying the map.
-        #  masked_grid_region is type open_cp.data.MaskedGrid
-        #  masked_grid_mesh is type tuple, with 2 elements
-        #   1st element is a list of x-coordinates (in Eastings) for grid
-        #   2nd element is a list of y-coordinates (in Northings) for grid
-        masked_grid_mesh = masked_grid_region.mesh_info()
-        
-        
-        
-        
-        # Get tuple of all cells in gridded region
-        # Each cell is represented as a 2-tuple of 0-up indices for the cells
-        #  within the (masked) grid. That is, they are NOT lat/long or E/N
-        #  coordinates, but they can be mapped to those coordinates by
-        #  using masked_grid_mesh, for example
-        cellcoordlist_region = getRegionCells(masked_grid_region)
-        
-        # Obtain number of cells in the grid that contain relevant geometry
-        # (i.e., not the full rectangular grid, only relevant cells)
-        num_cells_region = len(cellcoordlist_region)
-        
-        print("...Obtained full data set and region.")
-        tkntime_obtain_data = time.time() - chktime_obtain_data
-        print(f'Time taken to obtain data: {tkntime_obtain_data:.3f}')
-        
-        
-        
-        
-        # Log of how long each experiment takes to run
-        exp_times = []
-        
-        
-        
-        # Each start_test time in the generated list defines the time period for
-        #  an experiment (or multiple experiments)
-        for exp_date_index, start_test in enumerate(start_test_list):
+        if num_crimes_test > 0:
             
-            chktime_exp = time.time()
-            
-            if exp_date_index % print_exp_freq == 0:
-                print(f"Running experiment {exp_date_index+1}/{total_num_exp_dates}...")
-            
-            # Compute time ranges of training and testing data
-            end_train = start_test
-            start_train = generateEarlierDate(end_train, train_len)
-            end_test = generateLaterDate(start_test, test_len)
+            # Check that other necessary parameters are set
+            if coverage_bounds == None:
+                print("Error! Must provide coverage bounds as a "+\
+                      "parameter when a test data set is specified.")
+                sys.exit(1)
             
             
-            # Obtain training data
-            points_crime_region_train = getTimedPointsInTimeRange(
-                                            points_crime_region, 
-                                            start_train, 
-                                            end_train)
-            # Count how many crimes there were in this training data set
-            num_crimes_train = len(points_crime_region_train.timestamps)
             
-            
-            gdf_datapoints_train = \
-                        gdt.make_points_frame(points_crime_region_train, 
-                                              csv_epsg)
-            
-            out_train_geojson_full_path_n = \
-                out_train_geojson_full_path.replace(".geojson",
+            gdf_datapoints_test = gdt.make_points_frame(
+                                            points_crime_region_test, 
+                                            csv_epsg)
+            out_test_geojson_full_path_n = \
+                out_test_geojson_full_path.replace(".geojson",
                                         f"_{exp_date_index+1}.geojson")
-            print(f"Writing training data to {out_train_geojson_full_path_n}")
-            gdf_datapoints_train.to_file(out_train_geojson_full_path_n,
-                                   driver='GeoJSON')
+            print(f"Writing testing data to "+\
+                      f"{out_test_geojson_full_path_n}")
+            gdf_datapoints_test.to_file(out_test_geojson_full_path_n,
+                               driver='GeoJSON')
+            files_created.append(out_test_geojson_full_path_n)
+        
+        
+        # Display number of crimes in training and testing data
+        if exp_date_index % print_exp_freq == 0:
+            print(f"num_crimes_train: {num_crimes_train}")
+            print(f"num_crimes_test: {num_crimes_test}")
+        
+        
+        
+        # If we have few experiments (i.e. 1 date), then create and save
+        #  map visualisations of the data here. Later we'll also save
+        #  visualisations of the models' results.
+        if run_is_short and make_image_files:
             
+            print("Making image file names for training and testing data")
             
+            # Make image file names for training and testing data
             
-            # Obtain testing data
-            points_crime_region_test = getTimedPointsInTimeRange(
-                                            points_crime_region, 
-                                            start_test, 
-                                            end_test)
-            # Count how many crimes there were in this test data set
-            num_crimes_test = len(points_crime_region_test.timestamps)
+            img_file_core = "_".join([
+                                    date_today_str, 
+                                    getSixDigitDate(start_test), 
+                                    train_len, 
+                                    test_len, 
+                                    ])
             
-            # Count the number of crimes per cell in test data.
-            #  This is used for evaluation.
-            cells_testcrime_ctr = countPointsPerCell(points_crime_region_test, 
-                                                     masked_grid_region)
+            img_file_train_name = f"trainmap_{img_file_core}.png"
+            img_file_test_name = f"testmap_{img_file_core}.png"
+            img_file_train_full_path = os.path.join(output_datadir, 
+                                                    img_file_train_name)
+            img_file_test_full_path = os.path.join(output_datadir, 
+                                                   img_file_test_name)
+            print(f"Training data image file: {img_file_train_name}")
+            print(f"Testing data image file: {img_file_test_name}")
             
+            # Plot training data on plain grid
+            plotPointsOnGrid(points_crime_region_train, 
+                             masked_grid_region, 
+                             region_polygon, 
+                             title=f"Train data {exp_date_index+1}:"+\
+                                     f" {num_crimes_train} crimes", 
+                             sizex=10, 
+                             sizey=10, 
+                             out_img_file_path=img_file_train_full_path)
+            files_created.append(img_file_train_full_path)
             
             if num_crimes_test > 0:
-                gdf_datapoints_test = gdt.make_points_frame(
-                                                points_crime_region_test, 
-                                                csv_epsg)
-                out_test_geojson_full_path_n = \
-                    out_test_geojson_full_path.replace(".geojson",
-                                            f"_{exp_date_index+1}.geojson")
-                print(f"Writing testing data to "+\
-                          f"{out_test_geojson_full_path_n}")
-                gdf_datapoints_test.to_file(out_test_geojson_full_path_n,
-                                   driver='GeoJSON')
-            
-            
-            # Display number of crimes in training and testing data
-            if exp_date_index % print_exp_freq == 0:
-                print(f"num_crimes_train: {num_crimes_train}")
-                print(f"num_crimes_test: {num_crimes_test}")
-            
-            
-            
-            # If we have few experiments (i.e. 1 date), then create and save
-            #  map visualisations of the data here. Later we'll also save
-            #  visualisations of the models' results.
-            if run_is_short and make_image_files:
-                
-                print("Making image file names for training and testing data")
-                
-                # Make image file names for training and testing data
-                
-                img_file_core = "_".join([
-                                        date_today_str, 
-                                        getSixDigitDate(start_test), 
-                                        train_len, 
-                                        test_len, 
-                                        ])
-                
-                img_file_train_name = f"trainmap_{img_file_core}.png"
-                img_file_test_name = f"testmap_{img_file_core}.png"
-                img_file_train_full_path = os.path.join(output_datadir, 
-                                                        img_file_train_name)
-                img_file_test_full_path = os.path.join(output_datadir, 
-                                                       img_file_test_name)
-                print(f"Training data image file: {img_file_train_name}")
-                print(f"Testing data image file: {img_file_test_name}")
-                
-                # Plot training data on plain grid
-                plotPointsOnGrid(points_crime_region_train, 
+                # Plot testing data on plain grid
+                plotPointsOnGrid(points_crime_region_test, 
                                  masked_grid_region, 
                                  region_polygon, 
-                                 title=f"Train data {exp_date_index+1}:"+\
-                                         f" {num_crimes_train} crimes", 
+                                 title=f"Test data {exp_date_index+1};"+\
+                                     f" {num_crimes_test} crimes", 
                                  sizex=10, 
                                  sizey=10, 
-                                 out_img_file_path=img_file_train_full_path)
-                
-                if num_crimes_test > 0:
-                    # Plot testing data on plain grid
-                    plotPointsOnGrid(points_crime_region_test, 
-                                     masked_grid_region, 
-                                     region_polygon, 
-                                     title=f"Test data {exp_date_index+1};"+\
-                                         f" {num_crimes_test} crimes", 
-                                     sizex=10, 
-                                     sizey=10, 
-                                     out_img_file_path=img_file_test_full_path)
-                
-                
-                
-                
-            
-            
-            
-            # A "data_matrix" contains a risk score for each cell in the 
-            #  grid (within the masked region). These scores can then be 
-            #  used to rank the cells by risk. Note that different models 
-            #  use different scoring systems, so the scores from different 
-            #  data_matrices are not directly comparable, unless some 
-            #  normalisation process is used.
-            
-            # A "sorted_cells" list is a ranked list of cells based on the
-            #  previously computed data_matrix. Ties are currently broken by
-            #  selecting southernmost cells, then westernmost cells.
-            
-            # A "rank_matrix" is a matrix object where each cell is associated
-            #  with its ranking from the sorted_cells list. This is useful for
-            #  displaying a map of which cells are covered by various coverage
-            #  thresholds.
-            
-            
-            
-            # Result objects for various experiments
-            # model_name -> exp_num
-            data_matrix_dict = defaultdict(list)
-            sorted_cells_dict = defaultdict(list)
-            rank_matrix_dict = defaultdict(list)
-            hit_count_list_dict = defaultdict(list)
-            hit_rate_list_dict = defaultdict(list)
+                                 out_img_file_path=img_file_test_full_path)
+                files_created.append(img_file_test_full_path)
             
             
             
             
-            # For each model type (e.g., random, naive, phs, ideal)
-            for model_name in models_to_run:
-                if model_name not in recognised_models:
-                    print("Error!")
-                    print(f"Unrecognised model name: {model_name}")
-                    print(f"Recognised models are: {recognised_models}")
-                    print("Skipping that model.")
-                    continue
+        
+        
+        
+        # A "data_matrix" contains a risk score for each cell in the 
+        #  grid (within the masked region). These scores can then be 
+        #  used to rank the cells by risk. Note that different models 
+        #  use different scoring systems, so the scores from different 
+        #  data_matrices are not directly comparable, unless some 
+        #  normalisation process is used.
+        
+        # A "sorted_cells" list is a ranked list of cells based on the
+        #  previously computed data_matrix. Ties are currently broken by
+        #  selecting southernmost cells, then westernmost cells.
+        
+        # A "rank_matrix" is a matrix object where each cell is associated
+        #  with its ranking from the sorted_cells list. This is useful for
+        #  displaying a map of which cells are covered by various coverage
+        #  thresholds.
+        
+        
+        
+        # Result objects for various experiments
+        # model_name -> exp_num
+        data_matrix_dict = defaultdict(list)
+        sorted_cells_dict = defaultdict(list)
+        rank_matrix_dict = defaultdict(list)
+        hit_count_list_dict = defaultdict(list)
+        hit_rate_list_dict = defaultdict(list)
+        
+        
+        
+        
+        # For each model type (e.g., random, naive, phs, ideal)
+        for model_name in models_to_run:
+            if model_name not in recognised_models:
+                print("Error!")
+                print(f"Unrecognised model name: {model_name}")
+                print(f"Recognised models are: {recognised_models}")
+                print("Skipping that model.")
+                continue
+            
+            if exp_date_index % print_exp_freq == 0:
+                print(f"Running model: {model_name}")
                 
-                if exp_date_index % print_exp_freq == 0:
-                    print(f"Running model: {model_name}")
-                    
-                model_params = model_param_dict[model_name]
-                
-                # Generate the data matrix based on the particular model
-                if model_name == "random":
-                    for rand_seed in [x[0] for x in model_params]:
-                        data_matrix_dict[model_name].append(deepcopy(
-                                runRandomModel(
-                                        grid=masked_grid_region, 
-                                        rand_seed = rand_seed
-                                        )
-                                ))
-                elif model_name == "naive":
-                    data_matrix_dict[model_name].append(deepcopy(runNaiveModel(
-                            training_data=points_crime_region_train, 
-                            grid=masked_grid_region
-                            )))
-                elif model_name == "phs":
-                    for pc_index, params_combo in enumerate(model_params):
-                        if exp_date_index % print_exp_freq == 0:
-                            print(f" Parameter set #{pc_index+1}/"+\
-                                  f"{len(model_params)}")
-                        # Cast PHS parameters into proper data types
-                        phs_time_unit = shorthandToTimeDelta(params_combo[0])
-                        phs_time_band = shorthandToTimeDelta(params_combo[1])
-                        phs_dist_unit = int(params_combo[2])
-                        phs_dist_band = int(params_combo[3])
-                        phs_weight = params_combo[4]
-                        phs_spread = params_combo[5]
-                        
-                        data_matrix_dict[model_name].append(deepcopy(runPhsModel(
-                                training_data=points_crime_region_train, 
-                                grid=masked_grid_region, 
-                                cutoff_time=start_test, 
-                                time_unit=phs_time_unit, 
-                                dist_unit=phs_dist_unit, 
-                                time_bandwidth=phs_time_band, 
-                                dist_bandwidth=phs_dist_band, 
-                                weight=phs_weight, 
-                                spread=phs_spread
-                                )))
-                elif model_name == "ideal":
-                    data_matrix_dict[model_name].append(deepcopy(runNaiveModel(
-                            training_data=points_crime_region_test, 
-                            grid=masked_grid_region
-                            )))
-                else:
-                    print("Error!")
-                    print(f"This model has not been implemented: {model_name}")
-                    print("Skipping for now...")
-                    continue
-                
-                
-                
-                
-                
-                # For each result from that model
-                #  (i.e., if iterating over paramater options such as for
-                #   the phs model, each of their results are considered)
-                for exp_index, data_matrix in enumerate(
-                                                data_matrix_dict[model_name]):
-                    
-                    sorted_cells_dict[model_name].append(deepcopy(
-                            sortCellsByRiskMatrix(
-                                cellcoordlist_region, 
-                                data_matrix)
+            model_params = model_param_dict[model_name]
+            
+            # Generate the data matrix based on the particular model
+            if model_name == "random":
+                for rand_seed in [x[0] for x in model_params]:
+                    data_matrix_dict[model_name].append(deepcopy(
+                            runRandomModel(
+                                    grid=masked_grid_region, 
+                                    rand_seed = rand_seed
+                                    )
                             ))
+            elif model_name == "naive":
+                data_matrix_dict[model_name].append(deepcopy(runNaiveModel(
+                        training_data=points_crime_region_train, 
+                        grid=masked_grid_region
+                        )))
+            elif model_name == "phs":
+                for pc_index, params_combo in enumerate(model_params):
+                    if exp_date_index % print_exp_freq == 0:
+                        print(f" Parameter set #{pc_index+1}/"+\
+                              f"{len(model_params)}")
+                    # Cast PHS parameters into proper data types
+                    phs_time_unit = shorthandToTimeDelta(params_combo[0])
+                    phs_time_band = shorthandToTimeDelta(params_combo[1])
+                    phs_dist_unit = int(params_combo[2])
+                    phs_dist_band = int(params_combo[3])
+                    phs_weight = params_combo[4]
+                    phs_spread = params_combo[5]
                     
-                    
-                    hit_count_list_dict[model_name].append(
-                        deepcopy(getHitCountList(
-                            sorted_cells_dict[model_name][exp_index], 
-                            cells_testcrime_ctr))
-                        )
-                    
-                    if num_crimes_test == 0:
-                        hit_rate_list_dict[model_name].append(deepcopy(
-                            [0 for x in hit_count_list_dict[model_name][-1]]
+                    data_matrix_dict[model_name].append(deepcopy(runPhsModel(
+                            training_data=points_crime_region_train, 
+                            grid=masked_grid_region, 
+                            cutoff_time=start_test, 
+                            time_unit=phs_time_unit, 
+                            dist_unit=phs_dist_unit, 
+                            time_bandwidth=phs_time_band, 
+                            dist_bandwidth=phs_dist_band, 
+                            weight=phs_weight, 
+                            spread=phs_spread
+                            )))
+            elif model_name == "ideal":
+                data_matrix_dict[model_name].append(deepcopy(runNaiveModel(
+                        training_data=points_crime_region_test, 
+                        grid=masked_grid_region
+                        )))
+            else:
+                print("Error!")
+                print(f"This model has not been implemented: {model_name}")
+                print("Skipping for now...")
+                continue
+            
+            
+            
+            
+            
+            # For each result from that model
+            #  (i.e., if iterating over paramater options such as for
+            #   the phs model, each of their results are considered)
+            for exp_index, data_matrix in enumerate(
+                                            data_matrix_dict[model_name]):
+                
+                sorted_cells_dict[model_name].append(deepcopy(
+                        sortCellsByRiskMatrix(
+                            cellcoordlist_region, 
+                            data_matrix)
                         ))
-                    else:
-                        hit_rate_list_dict[model_name].append(deepcopy(
-                            [float(x/num_crimes_test) \
-                                 for x in hit_count_list_dict[model_name][-1]]
-                        ))
-                        
+                
+                
+                hit_count_list_dict[model_name].append(
+                    deepcopy(getHitCountList(
+                        sorted_cells_dict[model_name][exp_index], 
+                        cells_testcrime_ctr))
+                    )
+                
+                if num_crimes_test == 0:
+                    hit_rate_list_dict[model_name].append(deepcopy(
+                        [0 for x in hit_count_list_dict[model_name][-1]]
+                    ))
+                else:
+                    hit_rate_list_dict[model_name].append(deepcopy(
+                        [float(x/num_crimes_test) \
+                             for x in hit_count_list_dict[model_name][-1]]
+                    ))
+                    
+                
+                
+                # If there's not test data, all hit rates are 0
+                #  (Not entirely sure these few lines are even necessary,
+                #   but keeping them here just in case.)
+                if num_crimes_test <= 0:
+                    hit_rate_list_dict[model_name].append(deepcopy(
+                        [0 for x in hit_count_list_dict[model_name][-1]]
+                    ))
+                # Otherwise, calculate the hit rates, 
+                #  then generate Results csv file.
+                else:
+                    hit_rate_list_dict[model_name].append(deepcopy(
+                        [float(x/num_crimes_test) \
+                             for x in hit_count_list_dict[model_name][-1]]
+                    ))
                     
                     
-                    
+                    # Note that coverage_bounds here can be None,
+                    #  particularly for Forecasting
                     for coverage_rate in coverage_bounds:
                         
-                        # Get number and % of hits in results
-                        #results_hit, results_pct = hitRatesFromHitList(
-                        #            hit_count_list_dict[model_name][exp_index], 
-                        #            coverage_rate, 
-                        #            num_cells_region, 
-                        #            num_crimes_test)
-                        
-                        
-                        cov_rate_index = int(coverage_rate * num_cells_region)
-                        results_hit = hit_count_list_dict[model_name][exp_index][cov_rate_index]
-                        results_pct = hit_rate_list_dict[model_name][exp_index][cov_rate_index]
+                        cov_rate_index = \
+                            int(coverage_rate * num_cells_region)
+                        exp_hit_counts = \
+                            hit_count_list_dict[model_name][exp_index]
+                        results_hit = exp_hit_counts[cov_rate_index]
+                        exp_hit_pct = \
+                            hit_rate_list_dict[model_name][exp_index]
+                        results_pct = exp_hit_pct[cov_rate_index]
                         
                         # Standard result info to include for every model
                         result_info = [
@@ -1595,7 +1650,8 @@ def runModelExperiments(
                         if model_name == "phs":
                             result_info += [""]
                         # 
-                        result_info += list(model_param_dict[model_name][exp_index])
+                        result_info += \
+                            list(model_param_dict[model_name][exp_index])
                         
                         # Record training length as a parameter for naive
                         if model_name == "naive":
@@ -1606,12 +1662,43 @@ def runModelExperiments(
                             result_info.append("")
                         
                         # Write row to csv file
-                        results_writer.writerow(result_info)
+                        # This file should have been created near the
+                        #  start, with a header line already written.
+                        # So we should only be reaching this point in
+                        #  the code if num_experiments>0 anyway.
+                        with open(out_csv_results_full_path, "a") as csvf:
+                            results_writer = csv.writer(csvf, 
+                                                    delimiter=",", 
+                                                    lineterminator="\n")
+                            results_writer.writerow(result_info)
+                
+                
+                
+                
+                # Store data matrix values in GeoDataFrame
+                new_exp_ident = model_idents[model_name][exp_index]
+                new_data_matrix = \
+                    data_matrix_dict[model_name][exp_index]
+                gdf_cells[new_exp_ident] = \
+                    [new_data_matrix[c] for c in cellcoordlist_region]
+                # Now that we're using ipyleaflet in jupyter 
+                #  notebooks, we're less interested in the
+                #  relative ranking here, so I'm commenting it out.
+                #gdf_cells[new_exp_ident + "-rank"] = \
+                #    [new_rank_matrix[c] for c in cellcoordlist_region]
+                
+                
+                if run_is_short and make_image_files:
+                    # Only need to precompute rank matrix if we want
+                    #  to make an image file for it.
+                    # Save heat map and coverage map as image files
                         
+                        # Check that coverage_bounds exists
+                        if coverage_bounds == None:
+                            print("Error! Expected coverage_bounds "+\
+                                  "when creating image files.")
+                            sys.exit(1)
                         
-                    if run_is_short:
-                        
-                        # Plot 2 maps for each model
                         # Create rank matrix
                         new_rank_matrix = rankMatrixFromSortedCells(
                                     masked_grid_region, 
@@ -1625,175 +1712,170 @@ def runModelExperiments(
                         
                         
                         
-                        
-                        # Store data matrix values in GeoDataFrame
-                        new_exp_ident = model_idents[model_name][exp_index]
-                        new_data_matrix = \
-                            data_matrix_dict[model_name][exp_index]
-                        gdf_cells[new_exp_ident] = \
-                            [new_data_matrix[c] for c in cellcoordlist_region]
-                        # Now that we're using ipyleaflet in jupyter 
-                        #  notebooks, we're less interested in the
-                        #  relative ranking here, so I'm commenting it out.
-                        #gdf_cells[new_exp_ident + "-rank"] = \
-                        #    [new_rank_matrix[c] for c in cellcoordlist_region]
-                        
-                        
-                        
-                        # Save heat map and coverage map as image files
-                        if make_image_files:
-                            saveModelResultMaps(
-                                model_name, 
-                                data_matrix_dict[model_name][exp_index], 
-                                rank_matrix_dict[model_name][exp_index], 
-                                exp_ident = \
-                                    model_idents[model_name][exp_index], 
-                                file_core = img_file_core, 
-                                filedir = output_datadir, 
-                                polygon = region_polygon, 
-                                points_to_map = points_crime_region_train, 
-                                mesh_info = masked_grid_mesh, 
-                                )
-            
-            # At this point, finished loop over model types (naive, phs, etc)
-            
-            
-            
-            
-            
-            
-            
-            
-            
-            # Save detailed results data to a file
-            print("Saving detailed results to csv:")
-            out_csv_details_full_path_exp = \
-                out_csv_details_full_path[:-4] + \
-                f"_{exp_date_index+1}" + \
-                out_csv_details_full_path[-4:]
-            print(out_csv_details_full_path_exp)
-            
-            # Instantiate dataframe with column of integers from 1
-            #  to number of cells, and column of floats from 
-            #  1/(number of cells) to 1.
-            detail_df = pd.DataFrame(data={
-                    "cell_num": range(1,num_cells_region+1),
-                    "coverage": np.linspace(0,1,num_cells_region+1)[1:],
-                    })
-            
-            for model_name in models_to_run:
-                
-                
-                for exp_index, data_matrix in \
-                            enumerate(data_matrix_dict[model_name]):
-                    exp_ident = model_idents[model_name][exp_index]
-                    s_cells = sorted_cells_dict[model_name][exp_index]
-                    cell_risks = [data_matrix[sc] for sc in s_cells]
-                    crimes_found = \
-                        hit_count_list_dict[model_name][exp_index][1:]
-                    crimes_found_pct = \
-                        hit_rate_list_dict[model_name][exp_index][1:]
-                    # Explanatory note:
-                    #  The hit count/rate lists have one more entry than 
-                    #  the number of cells, because for their calculations
-                    #  we want to include the edge case where 0 cells
-                    #  are selected, in which case a score of 0 is
-                    #  earned. However, for the purposes of making a 
-                    #  dataframe, we want all columns to be the same 
-                    #  length, so we do not want to include this null 
-                    #  case. This is why "[1:]" is used above.
-                    
-                    
-                    
-                    
-                    df_model_info = dict()
-                    df_model_info[f"{exp_ident}_cell"] = s_cells
-                    df_model_info[f"{exp_ident}_cell_risk"] = \
-                        cell_risks
-                    #df_model_info[f"{exp_ident}_cell_crime"] = \
-                    #    
-                    df_model_info[f"{exp_ident}_found_count"] = \
-                        crimes_found
-                    df_model_info[f"{exp_ident}_found_rate"] = \
-                        crimes_found_pct
-                    
-                    detail_df = detail_df.assign(**df_model_info)
-                    
-                    
-            #print(detail_df)
-            detail_df.to_csv(out_csv_details_full_path_exp, index=False)
-            
-            
-            
-            
-            
-            
-            
-            
-            # If only a couple experiments, then create a line graph
-            #  comparing hit rates of different models (y-axis) based
-            #  on coverage rate (x-axis)
-            if run_is_short:
-                
-                # Save GeoDataFrame to file
-                print("Saving results to geojson:")
-                print(out_res_geojson_full_path)
-                gdt.frame_to_json_with_id(gdf_cells, 
-                                          out_res_geojson_full_path)
-                
-                
-                
-                
-                
-                # Don't bother graphing if there's no test data
-                if make_image_files and num_crimes_test > 0:
-                    
-                    print("Plotting graph coverage vs hit rate")
-                    
-                    img_file_core = "_".join([
-                            date_today_str, 
-                            getSixDigitDate(start_test), 
-                            train_len, 
-                            test_len, 
-                            ])
-                    
-                    img_file_graph_name = f"hitrates_{img_file_core}.png"
-                    img_file_graph_full_path = os.path.join(output_datadir, 
-                                                        img_file_graph_name)
-                    
-                    # If you want y-axis to be number of events found, then
-                    #  use hit_count_list_dict .
-                    # If you want y-axis to be fraction of events found, then
-                    #  use hit_rate_list_dict .
-                    graphCoverageVsHitRate(
-                            hit_count_list_dict, 
-                            model_idents, 
-                            models_to_run, 
-                            x_limits=(0, coverage_max), 
-                            title="Hit rate evaluation of models by coverage", 
-                            out_img_file_path = img_file_graph_full_path)
-            
-            
-            
-            
-            
-            
-            tkn_time_exp = time.time()-chktime_exp
-            print(f"Time spent on experiment: {tkn_time_exp:.3f}")
-            exp_times.append(tkn_time_exp)
-            
+                        map_file_names = saveModelResultMaps(
+                            model_name, 
+                            data_matrix_dict[model_name][exp_index], 
+                            rank_matrix_dict[model_name][exp_index], 
+                            exp_ident = \
+                                model_idents[model_name][exp_index], 
+                            file_core = img_file_core, 
+                            filedir = output_datadir, 
+                            polygon = region_polygon, 
+                            points_to_map = points_crime_region_train, 
+                            mesh_info = masked_grid_mesh, 
+                            )
+                        files_created += [x for x in map_file_names]
+        
+        # At this point, finished loop over model types (naive, phs, etc)
         
         
         
         
         
         
+        
+        
+        
+        # Save detailed results data to a file
+        print("Saving detailed results to csv:")
+        out_csv_details_full_path_exp = \
+            out_csv_details_full_path[:-4] + \
+            f"_{exp_date_index+1}" + \
+            out_csv_details_full_path[-4:]
+        print(out_csv_details_full_path_exp)
+        
+        # Instantiate dataframe with column of integers from 1
+        #  to number of cells, and column of floats from 
+        #  1/(number of cells) to 1.
+        detail_df = pd.DataFrame(data={
+                "cell_num": range(1,num_cells_region+1),
+                "coverage": np.linspace(0,1,num_cells_region+1)[1:],
+                })
+        
+        for model_name in models_to_run:
+            
+            
+            for exp_index, data_matrix in \
+                        enumerate(data_matrix_dict[model_name]):
+                exp_ident = model_idents[model_name][exp_index]
+                s_cells = sorted_cells_dict[model_name][exp_index]
+                cell_risks = [data_matrix[sc] for sc in s_cells]
+                crimes_found = \
+                    hit_count_list_dict[model_name][exp_index][1:]
+                crimes_found_pct = \
+                    hit_rate_list_dict[model_name][exp_index][1:]
+                # Explanatory note:
+                #  The hit count/rate lists have one more entry than 
+                #  the number of cells, because for their calculations
+                #  we want to include the edge case where 0 cells
+                #  are selected, in which case a score of 0 is
+                #  earned. However, for the purposes of making a 
+                #  dataframe, we want all columns to be the same 
+                #  length, so we do not want to include this null 
+                #  case. This is why "[1:]" is used above.
+                
+                
+                
+                
+                df_model_info = dict()
+                df_model_info[f"{exp_ident}_cell"] = s_cells
+                df_model_info[f"{exp_ident}_cell_risk"] = \
+                    cell_risks
+                #df_model_info[f"{exp_ident}_cell_crime"] = \
+                #    
+                df_model_info[f"{exp_ident}_found_count"] = \
+                    crimes_found
+                df_model_info[f"{exp_ident}_found_rate"] = \
+                    crimes_found_pct
+                
+                detail_df = detail_df.assign(**df_model_info)
+                
+                
+                
+        detail_df.to_csv(out_csv_details_full_path_exp, index=False)
+        files_created.append(out_csv_details_full_path_exp)
+        
+        
+        
+        
+        # Save GeoDataFrame to file
+        print("Saving results to geojson:")
+        out_res_geojson_full_path_exp = \
+            out_res_geojson_full_path[:-8] + \
+            f"_{exp_date_index+1}" + \
+            out_res_geojson_full_path[-8:]
+        print(out_res_geojson_full_path_exp)
+        gdt.frame_to_json_with_id(gdf_cells, 
+                                  out_res_geojson_full_path_exp)
+        files_created.append(out_res_geojson_full_path_exp)
+        
+        
+        
+        
+        # If only one experiment, then we can create a line graph
+        #  comparing hit rates (y-axis) of different models (lines) based
+        #  on coverage rate (x-axis)
+        if run_is_short:
+            
+            
+            
+            
+            
+            # Don't bother graphing if there's no test data
+            if make_image_files and num_crimes_test > 0:
+                
+                print("Plotting graph coverage vs hit rate")
+                
+                img_file_core = "_".join([
+                        date_today_str, 
+                        getSixDigitDate(start_test), 
+                        train_len, 
+                        test_len, 
+                        ])
+                
+                img_file_graph_name = f"hitrates_{img_file_core}.png"
+                img_file_graph_full_path = os.path.join(output_datadir, 
+                                                    img_file_graph_name)
+                
+                # If you want y-axis to be number of events found, then
+                #  use hit_count_list_dict .
+                # If you want y-axis to be fraction of events found, then
+                #  use hit_rate_list_dict .
+                graphCoverageVsHitRate(
+                        hit_count_list_dict, 
+                        model_idents, 
+                        models_to_run, 
+                        x_limits=(0, coverage_max), 
+                        title="Hit rate evaluation of models by coverage", 
+                        out_img_file_path = img_file_graph_full_path)
+                files_created.append(img_file_graph_full_path)
+        
+        
+        
+        
+        
+        
+        tkn_time_exp = time.time()-chktime_exp
+        print(f"Time spent on experiment: {tkn_time_exp:.3f}")
+        exp_times.append(tkn_time_exp)
+        
+    
+    
+    
+    
+    
+    
+    
+    
+    
     
     
     if make_image_files and not run_is_short:
         print("Plotting graph hit rates over time")
         from riskModelsResultsEval import graphHitRatesOverTime
-        graphHitRatesOverTime(out_csv_results_full_path)
+        graphHitRatesOverTime(out_csv_results_full_path,
+                              out_img_file_path=hit_rate_line_graph_full_path)
+        files_created.append(hit_rate_line_graph_full_path)
     
     
     print("Experiment timing info:")
@@ -1802,11 +1884,13 @@ def runModelExperiments(
         print(f"{i+1}\t{t:.3f}")
     
     
+    
     # Return full paths to the files that were generated
-    return [out_csv_results_full_path, 
-            out_train_geojson_full_path.replace(".geojson","_1.geojson"), 
-            out_test_geojson_full_path.replace(".geojson","_1.geojson"), 
-            out_res_geojson_full_path]
+    return files_created
+    #return [out_csv_results_full_path, 
+    #        out_train_geojson_full_path.replace(".geojson","_1.geojson"), 
+    #        out_test_geojson_full_path.replace(".geojson","_1.geojson"), 
+    #        out_res_geojson_full_path]
 
 
 
@@ -1835,7 +1919,6 @@ def main():
     #!!!  May want to use multiple sets of types, then combine results?
     #crime_type_set = "BURGLARY"
     crime_type_set = "Burglary, Vehicle crime"
-    #crime_type_set_sweep = [{"BURGLARY"}] # if doing a sweep over different sets
     # Size of grid cells
     #cell_width_sweep = [100] # if doing a sweep over different cell sizes
     cell_width = 500

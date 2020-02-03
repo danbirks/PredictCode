@@ -14,6 +14,20 @@ import sys
 _day = np.timedelta64(1,"D")
 
 
+"""
+check_time_step
+Check that a string is of the form "3D", "2W", "6M", "1Y", etc
+"""
+def check_time_step(step):
+    
+    step_upper_nospace = "".join(step.upper().split())
+    if not (step_upper_nospace[:-1].isnumeric() \
+            and step_upper_nospace[-1] in "DWMY"):
+        print("Error! Unrecognised time length format.")
+        print("Expected format is an integer followed by D/W/M/Y")
+        print(f"Time length given: {step}")
+        sys.exit(1)
+    return step_upper_nospace
 
 """
 standardizeTimeStep(step)
@@ -45,7 +59,7 @@ def shorthandToTimeDelta(step):
 """
 multiply_shorthand_timestep
 """
-def multipy_shorthand_timestep(step, mult):
+def multiply_shorthand_timestep(step, mult):
     step_num = int(step[:-1])
     step_unit = step[-1].upper()
     return f"{step_num * mult}{step_unit}"
@@ -62,6 +76,15 @@ def generateDateRange(start=None,
                       step=None,
                       num=None):
     
+    
+    step_num, step_unit = (0,"D")
+    if step != None:
+        step_num, step_unit = standardizeTimeStep(step)
+    
+    # Special case where step is None/0 and num is 1 and end might be None
+    if step_num==0 and num==1 and start != None:
+        return np.array([np.datetime64(start)])
+    
     # 3 values are needed to generate the 4th
     if [start,end,step,num].count(None) != 1:
         print("Error! Unexpected number of arguments for generateDateRange.")
@@ -72,11 +95,10 @@ def generateDateRange(start=None,
         print(f" num: {num}")
         sys.exit(1)
     
-    # Currently, step is required
+    # Currently, step is required, unless num==1 in above case
     if step==None:
-        print("Error! No step argument given to generateDateRange")
+        print("Error! Must provide a nonzero step size to generateDateRange")
         sys.exit(1)
-    step_num, step_unit = standardizeTimeStep(step)
     
     start_datetime = None
     end_datetime = None
@@ -86,25 +108,27 @@ def generateDateRange(start=None,
     if start == None:
         end_datetime = np.datetime64(end)
         start_datetime = generateEarlierDate(end_datetime, 
-                                        multipy_shorthand_timestep(step, num))
+                                        multiply_shorthand_timestep(step, num))
     # If no given end, generate it via start and step and num
     elif end == None:
         start_datetime = np.datetime64(start)
         end_datetime = generateLaterDate(start_datetime, \
-                                        multipy_shorthand_timestep(step, num))
+                                        multiply_shorthand_timestep(step, num))
+        # Add 1 day to avoid an off-by-one error(WHOOPS, MIGHT BE WRONG)
+        #end_datetime = generateLaterDate(end_datetime,"1D")
     # If given start and end, set them as the start and end datetimes
     else:
         start_datetime = np.datetime64(start)
         end_datetime = np.datetime64(end)
+    
+    
     
     # Generate date range via start and end and step
     date_range = np.arange(start_datetime, \
                            end_datetime, \
                            step=np.timedelta64(step_num, step_unit), \
                            dtype=f"datetime64[{step_unit}]")
-    
-    
-    
+
     
     date_range_array = np.array(date_range, dtype="datetime64[D]")
     if num!= None and len(date_range_array) != num:

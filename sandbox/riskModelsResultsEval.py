@@ -530,7 +530,8 @@ def getDataByCovRate(results_full_path,
 
 
 
-def graphHitRatesOverTime(results_full_path):
+def graphHitRatesOverTime(results_full_path, 
+                          out_img_file_path=None):
     
     datadicts_by_cov_rate, exp_dates, model_names, cov_rates = getDataByCovRate(results_full_path)
     
@@ -593,6 +594,9 @@ def graphHitRatesOverTime(results_full_path):
     ax.legend(names_for_legend)
     """
     
+    if out_img_file_path != None:
+        fig.savefig(out_img_file_path)
+        
     
     
     return
