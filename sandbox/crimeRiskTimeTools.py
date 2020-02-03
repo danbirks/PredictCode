@@ -114,8 +114,6 @@ def generateDateRange(start=None,
         start_datetime = np.datetime64(start)
         end_datetime = generateLaterDate(start_datetime, \
                                         multiply_shorthand_timestep(step, num))
-        # Add 1 day to avoid an off-by-one error(WHOOPS, MIGHT BE WRONG)
-        #end_datetime = generateLaterDate(end_datetime,"1D")
     # If given start and end, set them as the start and end datetimes
     else:
         start_datetime = np.datetime64(start)

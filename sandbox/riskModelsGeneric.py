@@ -1799,7 +1799,7 @@ def runModelExperiments(
         
         
         # Save GeoDataFrame to file
-        print("Saving results to geojson:")
+        print("Saving detailed results to geojson:")
         out_res_geojson_full_path_exp = \
             out_res_geojson_full_path[:-8] + \
             f"_{exp_date_index+1}" + \
@@ -1882,7 +1882,7 @@ def runModelExperiments(
     print("Exp #\tTime")
     for i, t in enumerate(exp_times):
         print(f"{i+1}\t{t:.3f}")
-    
+    print(f"Avg time: {sum(exp_times)/len(exp_times):.3f}")
     
     
     # Return full paths to the files that were generated
